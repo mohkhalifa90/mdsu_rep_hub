@@ -1,0 +1,440 @@
+import 'package:flutter/material.dart';
+
+import '../data/models.dart';
+import '../data/repo.dart';
+import '../shared/format.dart';
+import '../shared/issue_dialogs.dart';
+import '../shared/widgets.dart';
+import 'officer_shell.dart';
+
+// ============================ Follow-ups ===================================
+class OfficerFollowUpsPage extends StatefulWidget {
+  final OfficerData data;
+  const OfficerFollowUpsPage({super.key, required this.data});
+  @override
+  State<OfficerFollowUpsPage> createState() => _OfficerFollowUpsPageState();
+}
+
+class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
+  late Future<(List<Issue>, Map<String, String>)> _f = _load();
+  String _filter = 'open';
+  Future<(List<Issue>, Map<String, String>)> _load() async => (await Repo.issues(), await Repo.memberNames());
+  void _reload() => setState(() => _f = _load());
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.data.semester;
+    return Loader<(List<Issue>, Map<String, String>)>(
+      future: _f,
+      onRetry: _reload,
+      builder: (context, data) {
+        final (issues, names) = data;
+        final list = issues.where((i) => _filter == 'all' || (_filter == 'open' ? i.isOpen : i.status == _filter));
+        return ListView(padding: const EdgeInsets.all(24), children: [
+          Row(children: [
+            Expanded(
+              child: Text('Every issue raised in a council is tracked until the university answers. Open issues are '
+                  'carried to the next meeting and escalated after ${s?.escalateAfter ?? 2} meetings without an answer.'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                if (await showAddIssueDialog(context,
+                    councils: widget.data.councils.where((c) => !c.isSiec).toList())) {
+                  _reload();
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Log issue'),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, children: [
+            for (final f in const [
+              ('open', 'Open'),
+              ('answered', 'Answered'),
+              ('escalated', 'Escalated'),
+              ('closed', 'Closed'),
+              ('all', 'All')
+            ])
+              ChoiceChip(label: Text(f.$2), selected: _filter == f.$1, onSelected: (_) => setState(() => _filter = f.$1)),
+          ]),
+          const SizedBox(height: 12),
+          if (list.isEmpty) const EmptyState('Nothing here'),
+          for (final i in list)
+            Card(
+              child: ListTile(
+                title: Text(i.title),
+                subtitle: Text(
+                  '${widget.data.council(i.councilId)?.name ?? ''} · responsible: ${i.responsible ?? '—'} · '
+                  'raised by ${names[i.raisedBy] ?? ''} on ${fmtDate(i.createdAt)}'
+                  '${(i.response ?? '').isEmpty ? '' : '\n↳ ${i.response}'}',
+                ),
+                isThreeLine: (i.response ?? '').isNotEmpty,
+                trailing: StatusChip.issue(i.status),
+                onTap: () async {
+                  if (await showIssueUpdateDialog(context, i, officer: true)) _reload();
+                },
+              ),
+            ),
+        ]);
+      },
+    );
+  }
+}
+
+// ============================ Representatives ==============================
+class RepsPage extends StatefulWidget {
+  final OfficerData data;
+  const RepsPage({super.key, required this.data});
+  @override
+  State<RepsPage> createState() => _RepsPageState();
+}
+
+class _RepsPageState extends State<RepsPage> {
+  late Future<List<Profile>> _f = Repo.profiles();
+  void _reload() => setState(() => _f = Repo.profiles());
+
+  Future<void> _edit(Profile p) async {
+    final d = widget.data;
+    final name = TextEditingController(text: p.fullName), program = TextEditingController(text: p.program ?? '');
+    String? academy = p.academy;
+    int year = p.studyYear ?? 1;
+    bool member = p.isMember, quiz = p.quizPassed, active = p.active;
+    String role = p.role;
+    final councils = await Repo.councilIdsOf(p.id);
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
+                const SizedBox(height: 10),
+                TextField(controller: program, decoration: const InputDecoration(labelText: 'Program')),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      value: academy,
+                      decoration: const InputDecoration(labelText: 'Academy'),
+                      items: const [
+                        DropdownMenuItem<String?>(value: null, child: Text('—')),
+                        DropdownMenuItem<String?>(value: 'EST', child: Text('EST')),
+                        DropdownMenuItem<String?>(value: 'HVV', child: Text('HVV')),
+                        DropdownMenuItem<String?>(value: 'IDT', child: Text('IDT')),
+                        DropdownMenuItem<String?>(value: 'UKK', child: Text('UKK')),
+                      ],
+                      onChanged: (v) => setD(() => academy = v),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: year,
+                      decoration: const InputDecoration(labelText: 'Year'),
+                      items: [for (var y = 1; y <= 6; y++) DropdownMenuItem(value: y, child: Text('$y'))],
+                      onChanged: (v) => setD(() => year = v ?? year),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: role,
+                      decoration: const InputDecoration(labelText: 'Role'),
+                      items: const [
+                        DropdownMenuItem(value: 'rep', child: Text('Representative')),
+                        DropdownMenuItem(value: 'officer', child: Text('Head of Education')),
+                        DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                      ],
+                      onChanged: (v) => setD(() => role = v ?? role),
+                    ),
+                  ),
+                ]),
+                SwitchListTile(
+                    title: const Text('Union member (paid)'), value: member, onChanged: (v) => setD(() => member = v)),
+                SwitchListTile(
+                    title: const Text('Quiz passed this semester'), value: quiz, onChanged: (v) => setD(() => quiz = v)),
+                SwitchListTile(title: const Text('Active'), value: active, onChanged: (v) => setD(() => active = v)),
+                const Align(alignment: Alignment.centerLeft, child: Text('Councils')),
+                for (final c in d.councils.where((c) => !c.isSiec))
+                  CheckboxListTile(
+                    dense: true,
+                    title: Text(c.name),
+                    value: councils.contains(c.id),
+                    onChanged: (v) => setD(() => v == true ? councils.add(c.id) : councils.remove(c.id)),
+                  ),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final siec = d.councils.where((c) => c.isSiec).map((c) => c.id).toSet();
+    if (await runAction(context, () async {
+      await Repo.updateProfile(p.id, {
+        'full_name': name.text.trim(),
+        'program': program.text.trim().isEmpty ? null : program.text.trim(),
+        'academy': academy,
+        'study_year': year,
+        'is_member': member,
+        'quiz_passed': quiz,
+        'active': active,
+        'role': role,
+      });
+      await Repo.setCouncils(p.id, councils.difference(siec));
+    }, success: 'Saved')) {
+      _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Loader<List<Profile>>(
+        future: _f,
+        onRetry: _reload,
+        builder: (context, people) => ListView(padding: const EdgeInsets.all(24), children: [
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text('Adding a representative'),
+              subtitle: Text('Ask the student to install the app and sign in with their student email. '
+                  'They appear here (greyed out) – open them, switch on Active and set program, academy, '
+                  'councils and membership.'),
+            ),
+          ),
+          Card(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                showCheckboxColumn: false,
+                columns: const [
+                  DataColumn(label: Text('Name')),
+                  DataColumn(label: Text('Program')),
+                  DataColumn(label: Text('Year')),
+                  DataColumn(label: Text('Role')),
+                  DataColumn(label: Text('Member')),
+                  DataColumn(label: Text('Quiz')),
+                  DataColumn(label: Text('Successor task')),
+                ],
+                rows: [
+                  for (final p in people)
+                    DataRow(
+                      onSelectChanged: (_) => _edit(p),
+                      color: p.active ? null : WidgetStatePropertyAll(Colors.grey.shade200),
+                      cells: [
+                        DataCell(Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName)),
+                        DataCell(Text('${p.program ?? ''} ${p.academy == null ? '' : '· ${p.academy}'}')),
+                        DataCell(Text('${p.studyYear ?? '-'}')),
+                        DataCell(Text(p.role)),
+                        DataCell(Icon(p.isMember ? Icons.check : Icons.close, color: p.isMember ? Colors.green : Colors.red)),
+                        DataCell(Icon(p.quizPassed ? Icons.check : Icons.close,
+                            color: p.quizPassed ? Colors.green : Colors.orange)),
+                        DataCell(Text((p.studyYear ?? 1) > 1 && p.role == 'rep'
+                            ? 'Help recruit year ${p.studyYear! - 1} rep'
+                            : '—')),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ]),
+      );
+}
+
+// ============================ Settings & automations =======================
+class SettingsPage extends StatefulWidget {
+  final OfficerData data;
+  final VoidCallback onChanged;
+  const SettingsPage({super.key, required this.data, required this.onChanged});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  Semester? get s => widget.data.semester;
+  late final _rate = TextEditingController(text: '${s?.hourlyRate ?? 130}');
+  late final _half = TextEditingController(text: '${s?.halfHourRate ?? 65}');
+  late final _esc = TextEditingController(text: '${s?.escalateAfter ?? 2}');
+  late final _call = TextEditingController(text: '${s?.agendaCallDays ?? 7}');
+  late final _deadlineDays = TextEditingController(text: '${s?.agendaDeadlineDays ?? 2}');
+  late DateTime? _deadline = s?.reportDeadline;
+  late DateTime? _reminder = s?.reminderDate;
+
+  Future<DateTime?> _pick(DateTime? initial) => showDatePicker(
+      context: context,
+      initialDate: initial ?? DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2035));
+
+  String _d(DateTime d) => d.toIso8601String().substring(0, 10);
+
+  Future<void> _save() async {
+    if (s == null) return;
+    if (await runAction(
+        context,
+        () => Repo.updateSemester(s!.id, {
+              'hourly_rate': int.tryParse(_rate.text) ?? 130,
+              'half_hour_rate': int.tryParse(_half.text) ?? 65,
+              'escalate_after': int.tryParse(_esc.text) ?? 2,
+              'agenda_call_days': int.tryParse(_call.text) ?? 7,
+              'agenda_deadline_days': int.tryParse(_deadlineDays.text) ?? 2,
+              if (_deadline != null) 'report_deadline': _d(_deadline!),
+              'reminder_date': _reminder == null ? null : _d(_reminder!),
+            }),
+        success: 'Settings saved')) {
+      widget.onChanged();
+    }
+  }
+
+  Future<void> _newSemester() async {
+    final name = TextEditingController();
+    DateTime starts = DateTime.now(), ends = DateTime.now().add(const Duration(days: 150));
+    DateTime deadline = ends;
+    DateTime? reminder;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          Widget dateRow(String label, DateTime? v, void Function(DateTime) set) => ListTile(
+                title: Text(label),
+                trailing: Text(v == null ? '—' : fmtDateY(v)),
+                onTap: () async {
+                  final p = await _pick(v);
+                  if (p != null) setD(() => set(p));
+                },
+              );
+          return AlertDialog(
+            title: const Text('Start new semester'),
+            content: SizedBox(
+              width: 440,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Name (e.g. Spring 2027)')),
+                dateRow('Starts', starts, (d) => starts = d),
+                dateRow('Ends', ends, (d) => ends = d),
+                dateRow('Report deadline', deadline, (d) => deadline = d),
+                dateRow('Reminder date', reminder, (d) => reminder = d),
+                const Text('Old reports stay saved under the old semester. Every rep is asked to redo the quiz.'),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Start')),
+            ],
+          );
+        },
+      ),
+    );
+    if (ok != true || name.text.trim().isEmpty) return;
+    if (await runAction(
+        context,
+        () => Repo.startNewSemester(
+            name: name.text.trim(), starts: starts, ends: ends, deadline: deadline, reminder: reminder),
+        success: 'New semester started')) {
+      widget.onChanged();
+    }
+  }
+
+  Future<void> _runAutomations() async {
+    try {
+      final r = await Repo.runAutomations();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Automations ran'),
+          content: Text('Agenda input requests: ${r['agenda_calls']}\n'
+              'Time-log prompts: ${r['time_prompts']}\n'
+              'Issues escalated: ${r['escalated']}\n'
+              'Deadline reminders: ${r['reminders']}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ),
+      );
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rules = [
+      ('Ask for agenda input', '${_call.text} days before each meeting, reps in that council are asked to collect '
+          'input. Items must be sent ${_deadlineDays.text} days before the meeting.'),
+      ('Log time after meeting', 'The day after a meeting, reps get a prompt to log hours and upload notes.'),
+      ('Carry open issues forward', 'Unanswered issues appear on the next agenda of the same council.'),
+      ('Escalate unanswered issues', 'After ${_esc.text} meetings without an answer the issue is marked escalated.'),
+      ('Deadline reminders', 'On the reminder date and 3 days before the deadline, to everyone who has not submitted.'),
+    ];
+    return ListView(padding: const EdgeInsets.all(24), children: [
+      if (s == null)
+        Card(
+          child: ListTile(
+            title: const Text('No active semester'),
+            trailing: FilledButton(onPressed: _newSemester, child: const Text('Create semester')),
+          ),
+        ),
+      const SectionTitle('Automations (run every morning at 07:05)'),
+      Card(
+        child: Column(children: [
+          for (final (t, d) in rules) ListTile(leading: const Icon(Icons.bolt), title: Text(t), subtitle: Text(d)),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                  onPressed: _runAutomations, icon: const Icon(Icons.play_arrow), label: const Text('Run now')),
+            ),
+          ),
+        ]),
+      ),
+      if (s != null) ...[
+        SectionTitle('Pay & semester – ${s!.name}'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(spacing: 12, runSpacing: 12, children: [
+              SizedBox(width: 200, child: TextField(controller: _rate, decoration: const InputDecoration(labelText: 'Hourly rate (SEK)'))),
+              SizedBox(width: 200, child: TextField(controller: _half, decoration: const InputDecoration(labelText: 'Per started ½ hour (SEK)'))),
+              SizedBox(width: 200, child: TextField(controller: _esc, decoration: const InputDecoration(labelText: 'Escalate after (meetings)'))),
+              SizedBox(width: 200, child: TextField(controller: _call, decoration: const InputDecoration(labelText: 'Agenda reminder (days before)'))),
+              SizedBox(width: 200, child: TextField(controller: _deadlineDays, decoration: const InputDecoration(labelText: 'Agenda items due (days before)'))),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.event),
+                label: Text('Deadline: ${_deadline == null ? '—' : fmtDateY(_deadline!)}'),
+                onPressed: () async {
+                  final p = await _pick(_deadline);
+                  if (p != null) setState(() => _deadline = p);
+                },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.notifications_outlined),
+                label: Text('Reminder: ${_reminder == null ? '—' : fmtDateY(_reminder!)}'),
+                onPressed: () async {
+                  final p = await _pick(_reminder);
+                  if (p != null) setState(() => _reminder = p);
+                },
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          FilledButton(onPressed: _save, child: const Text('Save settings')),
+          const SizedBox(width: 12),
+          OutlinedButton(onPressed: _newSemester, child: const Text('Start new semester…')),
+        ]),
+        const SizedBox(height: 8),
+        const Text('Handbook rule: only hours worked while a union member are paid; late reports are paid at the end '
+            'of the next semester. Approved reports keep the amount calculated at approval.'),
+      ],
+    ]);
+  }
+}
