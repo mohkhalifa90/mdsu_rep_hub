@@ -56,6 +56,29 @@ class Repo {
   static Future<List<Council>> councils() async =>
       _list(await sb.from('councils').select().order('type').order('name'), Council.fromMap);
 
+  static Future<CouncilStats> councilStats() async {
+    final list = await councils();
+    final members = <String, int>{};
+    for (final r in await sb.from('council_members').select('council_id') as List) {
+      final id = r['council_id'] as String;
+      members[id] = (members[id] ?? 0) + 1;
+    }
+    final meetingCounts = <String, int>{};
+    for (final r in await sb.from('meetings').select('council_id') as List) {
+      final id = r['council_id'] as String;
+      meetingCounts[id] = (meetingCounts[id] ?? 0) + 1;
+    }
+    return CouncilStats(list, members, meetingCounts);
+  }
+
+  static Future<void> createCouncil({required String name, required String type, String? academy}) =>
+      sb.from('councils').insert({'name': name, 'type': type, 'academy': academy});
+
+  static Future<void> updateCouncil(String id, {required String name, required String type, String? academy}) =>
+      sb.from('councils').update({'name': name, 'type': type, 'academy': academy}).eq('id', id);
+
+  static Future<void> deleteCouncil(String id) => sb.from('councils').delete().eq('id', id);
+
   /// Council ids the user belongs to (SIEC always included).
   static Future<Set<String>> councilIdsOf(String userId) async {
     final rows = await sb.from('council_members').select('council_id').eq('user_id', userId);

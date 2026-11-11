@@ -78,6 +78,14 @@ class Council {
   bool get isSiec => type == 'siec';
 }
 
+/// Councils with how many reps and meetings each has (officer Councils page).
+class CouncilStats {
+  final List<Council> councils;
+  final Map<String, int> members;
+  final Map<String, int> meetings;
+  CouncilStats(this.councils, this.members, this.meetings);
+}
+
 class Meeting {
   final String id;
   final String councilId;

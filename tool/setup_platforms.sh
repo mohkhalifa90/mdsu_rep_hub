@@ -14,6 +14,25 @@ if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
   perl -0pi -e 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$MANIFEST"
 fi
 
+# Android: skip the "lintVital" checks in release builds. The Android lint tool crashes on
+# the Firebase plugin ("this is a bug in lint"); lint is only an extra code check.
+for GRADLE in android/build.gradle.kts android/build.gradle; do
+  if [ -f "$GRADLE" ] && ! grep -q 'lintVital' "$GRADLE"; then
+    cat >> "$GRADLE" <<'GRADLE_EOF'
+
+// Added by tool/setup_platforms.sh – Android lint crashes on the Firebase plugin
+subprojects {
+    tasks.configureEach {
+        if (name.startsWith("lintVital")) {
+            enabled = false
+        }
+    }
+}
+GRADLE_EOF
+    break
+  fi
+done
+
 # macOS: sandboxed apps need permission to reach the network and open user-selected files
 for f in macos/Runner/DebugProfile.entitlements macos/Runner/Release.entitlements; do
   [ -f "$f" ] || continue

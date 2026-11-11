@@ -38,7 +38,7 @@ jobs:
         run: |
           P="psql -h localhost -U postgres -v ON_ERROR_STOP=1 -q"
           $P -f supabase/tests/stub_supabase.sql
-          $P -f supabase/migrations/20261111000000_init.sql
+          for f in supabase/migrations/*.sql; do $P -f "$f"; done
           $P -f supabase/seed.sql
           $P -f supabase/tests/workflow_test.sql | tee result.txt
           grep -q "^ *0 | " result.txt

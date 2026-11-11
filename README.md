@@ -18,7 +18,7 @@ lib/
 supabase/
   migrations/…_init.sql     قاعدة البيانات كاملة: الجداول، الصلاحيات، الحسابات، الأتمتة
   seed.sql                  بيانات البداية (المجالس والقنوات والترم الحالي)
-  tests/                    42 اختبار للصلاحيات وسير العمل
+  tests/                    44 اختبار للصلاحيات وسير العمل
   functions/send-push/      دالة بتبعت الإشعار للموبايل + اختباراتها
 .github/workflows/build.yml بناء تلقائي لكل المنصات
 ```
@@ -29,7 +29,7 @@ supabase/
 
 ### 1) إنشاء مشروع Supabase (مرة واحدة)
 1. ادخل [supabase.com](https://supabase.com) واعمل مشروع جديد. اختار المنطقة **EU North (Stockholm)** عشان البيانات تفضل في السويد.
-2. من **SQL Editor** افتح ملف `supabase/migrations/20261111000000_init.sql`، انسخه كله واضغط **Run**.
+2. من **SQL Editor** شغّل ملفات فولدر `supabase/migrations` **بالترتيب**: الأول `20261111000000_init.sql` وبعده `20261111000100_councils_admin.sql`. كل ملف تنسخه كله وتدوس **Run**.
 3. بعده شغّل `supabase/seed.sql` بنفس الطريقة. عدّل أسماء المجالس فيه لتطابق مجالسكم الحقيقية قبل ما تشغله.
 4. من **Database → Extensions** فعّل **pg_cron**، وبعدها شغّل السطر ده مرة واحدة، عشان التذكيرات والتصعيد يشتغلوا كل يوم الساعة 07:05 بتوقيت السويد:
    ```sql
@@ -66,7 +66,7 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 1. ارفع المشروع على GitHub (ممكن يكون repo خاص).
 2. من **Settings → Secrets and variables → Actions** ضيف سرّين: `SUPABASE_URL` و `SUPABASE_ANON_KEY`.
 3. مع كل push هيشتغل الآتي:
-   - اختبارات قاعدة البيانات الـ 42 واختبارات دالة الإشعارات.
+   - اختبارات قاعدة البيانات الـ 44 واختبارات دالة الإشعارات.
    - فحص الكود.
    - بناء **APK للأندرويد** ونسخة **Windows** و **macOS** و **web**، تلاقيهم في تبويب **Actions → Artifacts** جاهزين للتحميل.
    - بناء iOS للتأكد إن الكود بيشتغل عليه. النشر على App Store محتاج حساب Apple Developer (99 دولار في السنة)، والنشر على Google Play محتاج رسوم 25 دولار مرة واحدة.
@@ -126,6 +126,7 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 ```bash
 psql -f supabase/tests/stub_supabase.sql      # بديل مبسط لـ auth بتاع Supabase
 psql -f supabase/migrations/20261111000000_init.sql
+psql -f supabase/migrations/20261111000100_councils_admin.sql
 psql -f supabase/seed.sql
 psql -f supabase/tests/workflow_test.sql      # لازم يطلع: failures = 0
 deno test --allow-net --allow-env supabase/functions/send-push/index.test.ts

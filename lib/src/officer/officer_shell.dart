@@ -9,6 +9,7 @@ import '../shared/format.dart';
 import '../shared/widgets.dart';
 import 'admin_pages.dart';
 import 'agenda_builder_page.dart';
+import 'councils_page.dart';
 import 'reports_page.dart';
 
 class OfficerData {
@@ -59,6 +60,7 @@ class _OfficerShellState extends State<OfficerShell> {
     (Icons.list_alt, 'Agenda builder'),
     (Icons.loop, 'Follow-ups'),
     (Icons.people_outline, 'Representatives'),
+    (Icons.account_balance_outlined, 'Councils'),
     (Icons.school_outlined, 'Tutoring board'),
     (Icons.settings_outlined, 'Automations & settings'),
   ];
@@ -83,6 +85,7 @@ class _OfficerShellState extends State<OfficerShell> {
           AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d),
           OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
           RepsPage(key: ValueKey('re$_refresh'), data: d),
+          CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
           TutoringBoard(me: d.me),
           SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
         ];

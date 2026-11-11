@@ -161,6 +161,25 @@ select public.run_automations() as automation_result3 \gset
 insert into t select '9e automations: escalate after 2 meetings without answer', (:'automation_result3'::jsonb ->> 'escalated')::int = 1
   and (select status from public.issues limit 1) = 'escalated';
 
+-- 9g. officer deletes a council that has logged (and approved) hours: hours stay, link cleared
+insert into public.councils (name, type) values ('Temporary council', 'general');
+update public.time_entries set council_id = (select id from public.councils where name = 'Temporary council')
+  where id = (select id from public.time_entries where user_id = '00000000-0000-0000-0000-000000000002' limit 1);
+delete from public.councils where name = 'Temporary council';
+insert into t select '9g council deleted, hours kept', (select count(*) from public.councils where name='Temporary council') = 0
+  and (select count(*) from public.time_entries where user_id = '00000000-0000-0000-0000-000000000002') = 1;
+insert into public.councils (name, type) values ('Temp 2', 'general');
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+set session_replication_role = replica;   -- test setup only: skip the lock trigger
+update public.time_entries set council_id = (select id from public.councils where name = 'Temp 2')
+  where user_id = '00000000-0000-0000-0000-000000000001';      -- Lina's report is APPROVED (locked)
+set session_replication_role = origin;
+set role authenticated;
+select from pg_temp.as_user('Head of Education');
+delete from public.councils where name = 'Temp 2';
+insert into t select '9h council with locked report hours can be deleted', (select count(*) from public.councils where name='Temp 2') = 0;
+
 -- 10. back as Lina: notifications arrived, mark read
 select from pg_temp.as_user('Lina Berg');
 insert into t select '10 Lina got approval + announcement + agenda + log prompt',
