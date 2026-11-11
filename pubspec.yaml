@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   supabase_flutter: ^2.8.0
   intl: '>=0.19.0 <0.21.0'
-  file_picker: '>=8.1.0 <12.0.0'
+     file_picker: '>=10.3.10 <11.0.0'
   url_launcher: ^6.3.0
   excel: ^4.0.6
   firebase_core: '>=3.6.0 <5.0.0'
