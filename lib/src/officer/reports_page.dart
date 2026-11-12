@@ -240,7 +240,7 @@ class _ReportDetail extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        'Total ${fmtHours(row.minutes)} h → ${(row.minutes + 29) ~/ 30} started half hours × '
+                        'Total ${fmtHours(row.minutes)} h → ${row.halfHours} started half hours (per activity) × '
                         '${data.semester!.halfHourRate} SEK = ${sek(row.amount)}',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),

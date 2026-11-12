@@ -242,7 +242,33 @@ class _ProfilePageState extends State<ProfilePage> {
   late bool _share = widget.data.me.shareContact;
   late final _name = TextEditingController(text: widget.data.me.fullName);
   final _pnr = TextEditingController();
-  late final Future<bool> _hasPnr = Repo.hasPersonalNumber();
+  final _address = TextEditingController();
+  bool _hasPnr = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Repo.myPrivateDetails().then((d) {
+      if (!mounted || d == null) return;
+      setState(() {
+        _hasPnr = d['personal_number'] != null;
+        _address.text = (d['address'] ?? '') as String;
+      });
+    });
+  }
+
+  Future<void> _savePrivate() async {
+    final pnr = _pnr.text.trim();
+    final ok = await runAction(
+      context,
+      () => Repo.savePrivateDetails(personalNumber: pnr.isEmpty ? null : pnr, address: _address.text),
+      success: 'Saved',
+    );
+    if (ok && pnr.isNotEmpty) {
+      _pnr.clear();
+      setState(() => _hasPnr = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -272,26 +298,25 @@ class _ProfilePageState extends State<ProfilePage> {
       ListTile(title: const Text('Quiz passed this semester (≥80 %)'), trailing: Icon(me.quizPassed ? Icons.check : Icons.close)),
       ListTile(title: const Text('Councils'), subtitle: Text(widget.data.myCouncils.map((c) => c.name).join('\n'))),
       const Divider(),
-      FutureBuilder<bool>(
-        future: _hasPnr,
-        builder: (context, s) => ListTile(
-          title: const Text('Personal number / samordningsnummer'),
-          subtitle: Text(s.data == true
-              ? 'On file ✓ (only you and the Head of Education can see it)'
-              : 'Needed to pay you. No bank details needed.'),
-        ),
+      const ListTile(
+        title: Text('Payment details for the time report'),
+        subtitle: Text('Only you and the Head of Education can see these. No bank details needed.'),
       ),
       TextField(
-          controller: _pnr,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'YYYYMMDD-XXXX')),
-      const SizedBox(height: 8),
-      FilledButton(
-        onPressed: () async {
-          if (await runAction(context, () => Repo.savePersonalNumber(_pnr.text), success: 'Saved')) _pnr.clear();
-        },
-        child: const Text('Save personal number'),
+        controller: _pnr,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: 'Personal number / samordningsnummer',
+          hintText: _hasPnr ? 'On file ✓ – type to change' : 'YYYYMMDD-XXXX',
+        ),
       ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _address,
+        decoration: const InputDecoration(labelText: 'Home address (Bostadsadress)', hintText: 'Street 1, 123 45 City'),
+      ),
+      const SizedBox(height: 10),
+      FilledButton(onPressed: _savePrivate, child: const Text('Save payment details')),
     ]);
   }
 }

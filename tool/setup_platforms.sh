@@ -61,4 +61,8 @@ if [ -f "$PLIST" ] && ! grep -q 'UIBackgroundModes' "$PLIST"; then
   perl -0pi -e 's#<dict>#<dict>\n\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>remote-notification</string>\n\t</array>#' "$PLIST"
 fi
 
+# App icon from the MDSU logo (assets/app_icon.png)
+flutter pub get > /dev/null
+dart run flutter_launcher_icons > /dev/null
+
 echo "Platform folders ready."

@@ -12,6 +12,8 @@ import 'src/shared/widgets.dart';
 // Pass your project values at build time:
 // flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SUPABASE_ANON_KEY=eyJ...
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const mdsuBlue = Color(0xFF2F5AAE);
+const mdsuLightBlue = Color(0xFF21BBEF);
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
@@ -32,8 +34,15 @@ class RepHubApp extends StatelessWidget {
       title: 'MDSU Rep Hub',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF5B2A86),
         useMaterial3: true,
+        // MDSU colours: blue from mdsu.se, light blue from the logo
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: mdsuBlue,
+          primary: mdsuBlue,
+          secondary: mdsuLightBlue,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF7F8FB),
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.white, surfaceTintColor: Colors.white),
         inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder(), isDense: true),
       ),
       home: supabaseUrl.isEmpty ? const _MissingConfig() : const AuthGate(),
@@ -94,7 +103,9 @@ class _PendingApproval extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.hourglass_top, size: 48),
+              Image.asset('assets/logo.png', height: 48),
+              const SizedBox(height: 24),
+              const Icon(Icons.hourglass_top, size: 40),
               const SizedBox(height: 12),
               Text('Welcome, ${me.fullName}!', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),

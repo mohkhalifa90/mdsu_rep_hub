@@ -7,6 +7,15 @@ int payAmount(int minutes, {required bool member, int halfHourRate = 65}) {
   return ((minutes + 29) ~/ 30) * halfHourRate;
 }
 
+/// Semester pay like the official Excel time report: every activity is rounded up to
+/// started half hours on its own, then the rows are added up.
+int payForActivities(Iterable<int> minutesPerActivity, {required bool member, int halfHourRate = 65}) {
+  if (!member) return 0;
+  return minutesPerActivity.fold<int>(0, (sum, m) => sum + (m <= 0 ? 0 : (m + 29) ~/ 30)) * halfHourRate;
+}
+
+const swedishWeekdays = ['Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag', 'Söndag'];
+
 const activityLabels = <String, String>{
   'council_meeting': 'Council meeting with the university',
   'siec_meeting': 'SIEC meeting',

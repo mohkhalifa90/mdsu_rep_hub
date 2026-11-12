@@ -18,7 +18,7 @@ lib/
 supabase/
   migrations/…_init.sql     قاعدة البيانات كاملة: الجداول، الصلاحيات، الحسابات، الأتمتة
   seed.sql                  بيانات البداية (المجالس والقنوات والترم الحالي)
-  tests/                    44 اختبار للصلاحيات وسير العمل
+  tests/                    46 اختبار للصلاحيات وسير العمل
   functions/send-push/      دالة بتبعت الإشعار للموبايل + اختباراتها
 .github/workflows/build.yml بناء تلقائي لكل المنصات
 ```
@@ -29,7 +29,10 @@ supabase/
 
 ### 1) إنشاء مشروع Supabase (مرة واحدة)
 1. ادخل [supabase.com](https://supabase.com) واعمل مشروع جديد. اختار المنطقة **EU North (Stockholm)** عشان البيانات تفضل في السويد.
-2. من **SQL Editor** شغّل ملفات فولدر `supabase/migrations` **بالترتيب**: الأول `20261111000000_init.sql` وبعده `20261111000100_councils_admin.sql`. كل ملف تنسخه كله وتدوس **Run**.
+2. من **SQL Editor** شغّل ملفات فولدر `supabase/migrations` **بالترتيب**، كل ملف تنسخه كله وتدوس **Run**:
+   - `20261111000000_init.sql`
+   - `20261111000100_councils_admin.sql`
+   - `20261112000000_teams_channels_timesheet.sql`
 3. بعده شغّل `supabase/seed.sql` بنفس الطريقة. عدّل أسماء المجالس فيه لتطابق مجالسكم الحقيقية قبل ما تشغله.
 4. من **Database → Extensions** فعّل **pg_cron**، وبعدها شغّل السطر ده مرة واحدة، عشان التذكيرات والتصعيد يشتغلوا كل يوم الساعة 07:05 بتوقيت السويد:
    ```sql
@@ -63,7 +66,7 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 1. ارفع المشروع على GitHub (ممكن يكون repo خاص).
 2. من **Settings → Secrets and variables → Actions** ضيف سرّين: `SUPABASE_URL` و `SUPABASE_ANON_KEY`.
 3. مع كل push هيشتغل الآتي:
-   - اختبارات قاعدة البيانات الـ 44 واختبارات دالة الإشعارات.
+   - اختبارات قاعدة البيانات الـ 46 واختبارات دالة الإشعارات.
    - فحص الكود.
    - بناء **APK للأندرويد** ونسخة **Windows** و **macOS** و **web**، تلاقيهم في تبويب **Actions → Artifacts** جاهزين للتحميل.
    - بناء iOS للتأكد إن الكود بيشتغل عليه. النشر على App Store محتاج حساب Apple Developer (99 دولار في السنة)، والنشر على Google Play محتاج رسوم 25 دولار مرة واحدة.
@@ -109,13 +112,15 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 ## قواعد العمل (موجودة في قاعدة البيانات)
 | القاعدة | التنفيذ |
 |---|---|
-| الأجر | 130 كرونة/ساعة = 65 لكل نص ساعة بدأت، على **إجمالي** الترم، للأعضاء بس (`pay_amount`) |
+| الأجر | 130 كرونة/ساعة = 65 لكل نص ساعة بدأت. **كل نشاط بيتقرّب لوحده** وبعدين بيتجمع، زي شيت Timrapport بالظبط، وللأعضاء بس |
 | تثبيت المبلغ | عند الموافقة يتسجل المبلغ، فتغيير السعر بعدين ما بيأثرش على التقارير المعتمدة |
 | قفل التقرير | بعد Submit مفيش تعديل غير لو مسؤول التعليم رجّعه (`guard_time_entry`) |
 | التأخير | التقرير المتأخر بيتعلّم عليه `is_late` |
 | القضايا | أي قضية مالهاش رد بتظهر لوحدها في أجندة الاجتماع الجاي لنفس المجلس، وبتتصعّد بعد عدد اجتماعات بتحدده (الافتراضي 2) |
 | الأجندة | التذكير بيتبعت قبل الاجتماع بـ 7 أيام، وآخر ميعاد لإرسال المواضيع قبل الاجتماع بيومين. الرقمين بيتغيّروا من صفحة الإعدادات |
-| تصدير المرتبات | ملف Excel فيه شيتين: Payroll (ملخص لكل ممثل وإجمالي المبلغ) و Entries (كل نشاط اتسجّل، للتوثيق) |
+| تصدير المرتبات | ملف Excel فيه شيت **Sammanställning** (ممثل في كل صف + الإجمالي) وشيت لكل ممثل بنفس شكل **Timrapport för studentrepresentanter** |
+| الأجندة | ملف Word بنفس شكل أجندة SIEC: الغلاف واللوجو والهيدر والفوتر والأقسام المرقّمة (`assets/agenda_template.docx`) |
+| القنوات | زي Teams: Allmänt، SIEC (للمسؤول بس)، SSOC، Student input، Student Representative Resources، ومعاهم رفع ملفات |
 | الخصوصية | الممثل يشوف بياناته بس، الرقم الشخصي في جدول منفصل، وإيميل الممثل مش بيظهر للممثلين التانيين إلا لو وافق |
 | الحسابات الجديدة | مش بتشوف أي حاجة لحد ما مسؤول التعليم يفعّلها |
 
@@ -124,6 +129,7 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 psql -f supabase/tests/stub_supabase.sql      # بديل مبسط لـ auth بتاع Supabase
 psql -f supabase/migrations/20261111000000_init.sql
 psql -f supabase/migrations/20261111000100_councils_admin.sql
+psql -f supabase/migrations/20261112000000_teams_channels_timesheet.sql
 psql -f supabase/seed.sql
 psql -f supabase/tests/workflow_test.sql      # لازم يطلع: failures = 0
 deno test --allow-net --allow-env supabase/functions/send-push/index.test.ts

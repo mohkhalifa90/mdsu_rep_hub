@@ -88,9 +88,10 @@ class _RepShellState extends State<RepShell> {
           ChannelsPage(me: d.me),
           MorePage(data: d, onChanged: _reload),
         ];
-        const titles = ['MDSU Rep Hub', 'My hours', 'Agenda input', 'Channels', 'More'];
+        const titles = ['Rep Hub', 'My hours', 'Agenda input', 'Channels', 'More'];
         return Scaffold(
           appBar: AppBar(
+            leading: Padding(padding: const EdgeInsets.all(12), child: Image.asset('assets/logo_symbol.png')),
             title: Text(titles[_tab]),
             actions: [NotificationBell(onOpen: (l) => _openLink(l, d))],
           ),

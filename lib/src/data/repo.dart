@@ -51,11 +51,17 @@ class Repo {
         if (shareContact != null) 'share_contact': shareContact,
       }).eq('id', uid);
 
-  static Future<bool> hasPersonalNumber() async =>
-      (await sb.from('private_details').select('user_id').eq('user_id', uid).maybeSingle()) != null;
+  /// Own personal number + address (null when not filled in yet)
+  static Future<Map<String, dynamic>?> myPrivateDetails() =>
+      sb.from('private_details').select().eq('user_id', uid).maybeSingle();
 
-  static Future<void> savePersonalNumber(String pnr) =>
-      sb.from('private_details').upsert({'user_id': uid, 'personal_number': pnr.trim()});
+  static Future<void> savePrivateDetails({String? personalNumber, String? address}) =>
+      sb.from('private_details').upsert({
+        'user_id': uid,
+        if (personalNumber != null) 'personal_number': personalNumber.trim().isEmpty ? null : personalNumber.trim(),
+        if (address != null) 'address': address.trim().isEmpty ? null : address.trim(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
 
   // ---------- reference data ----------
   static Future<Semester?> semester() async {
@@ -144,6 +150,7 @@ class Repo {
     String? meetingId,
     required int minutes,
     required String description,
+    String? startTime, // 'HH:MM'
   }) async {
     final r = await sb
         .from('time_entries')
@@ -154,6 +161,7 @@ class Repo {
           'meeting_id': meetingId,
           'minutes': minutes,
           'description': description,
+          'start_time': startTime,
         })
         .select('id')
         .single();
@@ -250,10 +258,27 @@ class Repo {
 
   // ---------- channels ----------
   static Future<List<Channel>> channels() async =>
-      _list(await sb.from('channels').select().order('created_at'), Channel.fromMap);
+      _list(await sb.from('channels').select().order('sort_order').order('created_at'), Channel.fromMap);
 
-  static Future<void> createChannel({required String name, required String description, required String audience}) =>
-      sb.from('channels').insert({'name': name, 'description': description, 'audience': audience});
+  static Future<void> saveChannel(
+      {String? id, required String name, required String description, required String audience, required bool officerOnly}) {
+    final values = {'name': name, 'description': description, 'audience': audience, 'officer_only': officerOnly};
+    return id == null ? sb.from('channels').insert(values) : sb.from('channels').update(values).eq('id', id);
+  }
+
+  static Future<void> deleteChannel(String id) => sb.from('channels').delete().eq('id', id);
+
+  static const channelFilesBucket = 'channel-files';
+
+  /// Uploads a file to the channel's storage and returns its path.
+  static Future<String> uploadChannelFile(String fileName, Uint8List bytes) async {
+    final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}_$safe';
+    await sb.storage.from(channelFilesBucket).uploadBinary(path, bytes);
+    return path;
+  }
+
+  static Future<String> channelFileUrl(String path) => sb.storage.from(channelFilesBucket).createSignedUrl(path, 300);
 
   static Stream<List<Message>> messageStream(String channelId) => sb
       .from('messages')
@@ -262,8 +287,15 @@ class Repo {
       .order('created_at', ascending: true)
       .map((rows) => rows.map(Message.fromMap).toList());
 
-  static Future<void> sendMessage(String channelId, String body, {bool announcement = false}) =>
-      sb.from('messages').insert({'channel_id': channelId, 'body': body, 'is_announcement': announcement});
+  static Future<void> sendMessage(String channelId, String body,
+          {bool announcement = false, String? filePath, String? fileName}) =>
+      sb.from('messages').insert({
+        'channel_id': channelId,
+        'body': body,
+        'is_announcement': announcement,
+        'file_path': filePath,
+        'file_name': fileName,
+      });
 
   static Future<Set<String>> myReadMessageIds() async {
     final rows = await sb.from('message_reads').select('message_id').eq('user_id', uid);

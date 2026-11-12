@@ -54,6 +54,7 @@ class _HoursPageState extends State<HoursPage> {
         final (r, entries, withNotes) = data;
         final locked = r?.isLocked ?? false;
         final minutes = entries.fold<int>(0, (a, e) => a + e.minutes);
+        final halves = entries.fold<int>(0, (a, e) => a + e.halfHours);
         final withoutNotes = entries.where((e) => !withNotes.contains(e.id)).length;
         return Stack(children: [
           ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 96), children: [
@@ -67,8 +68,10 @@ class _HoursPageState extends State<HoursPage> {
                     const Spacer(),
                     StatusChip.report(r?.status ?? 'draft'),
                   ]),
-                  Text('${(minutes + 29) ~/ 30} started half hours × ${d.semester!.halfHourRate} SEK = '
-                      '${sek(payAmount(minutes, member: d.me.isMember, halfHourRate: d.semester!.halfHourRate))}'),
+                  Text('$halves started half hours × ${d.semester!.halfHourRate} SEK = '
+                      '${sek(d.me.isMember ? halves * d.semester!.halfHourRate : 0)}'),
+                  Text('Each activity is rounded up to started half hours, like the Excel time report.',
+                      style: Theme.of(context).textTheme.bodySmall),
                   if (r?.status == 'returned' && (r?.reviewerComment ?? '').isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -100,7 +103,8 @@ class _HoursPageState extends State<HoursPage> {
               Card(
                 child: ListTile(
                   title: Text(activityLabels[e.activity] ?? e.activity),
-                  subtitle: Text('${fmtDate(e.workDate)} · ${d.council(e.councilId)?.name ?? ''}\n${e.description}'),
+                  subtitle: Text('${fmtDate(e.workDate)}${e.fromText == null ? '' : ' · ${e.fromText}–${e.toText}'}'
+                      ' · ${d.council(e.councilId)?.name ?? ''}\n${e.description}'),
                   isThreeLine: true,
                   leading: Icon(withNotes.contains(e.id) ? Icons.attach_file : Icons.warning_amber_outlined,
                       color: withNotes.contains(e.id) ? Colors.green : Colors.orange),
@@ -190,6 +194,7 @@ class _LogTimeForm extends StatefulWidget {
 
 class _LogTimeFormState extends State<_LogTimeForm> {
   late DateTime _date = DateTime.now();
+  TimeOfDay _start = const TimeOfDay(hour: 9, minute: 0);
   String _activity = 'council_meeting';
   String? _council;
   String? _meeting;
@@ -208,6 +213,7 @@ class _LogTimeFormState extends State<_LogTimeForm> {
       _meeting = m.first.id;
       _council = m.first.councilId;
       _date = m.first.startsAt;
+      _start = TimeOfDay.fromDateTime(m.first.startsAt);
       _desc.text = m.first.title;
       _minutes = 120;
       _activity = (widget.data.council(m.first.councilId)?.isSiec ?? false) ? 'siec_meeting' : 'council_meeting';
@@ -224,6 +230,7 @@ class _LogTimeFormState extends State<_LogTimeForm> {
         meetingId: _meeting,
         minutes: _minutes,
         description: _desc.text.trim(),
+        startTime: '${_start.hour.toString().padLeft(2, '0')}:${_start.minute.toString().padLeft(2, '0')}',
       );
       if (_file?.bytes != null) {
         await Repo.uploadNote(entryId: id, fileName: _file!.name, bytes: Uint8List.fromList(_file!.bytes!));
@@ -248,18 +255,32 @@ class _LogTimeFormState extends State<_LogTimeForm> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('Log time', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.event),
-          label: Text(fmtDateY(_date)),
-          onPressed: () async {
-            final p = await showDatePicker(
-                context: context,
-                initialDate: _date,
-                firstDate: d.semester?.startsOn ?? DateTime(2020),
-                lastDate: DateTime.now());
-            if (p != null) setState(() => _date = p);
-          },
-        ),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.event),
+              label: Text(fmtDateY(_date)),
+              onPressed: () async {
+                final first = d.semester?.startsOn ?? DateTime(2020);
+                final p = await showDatePicker(
+                    context: context,
+                    initialDate: _date.isBefore(first) ? first : _date,
+                    firstDate: first,
+                    lastDate: DateTime.now());
+                if (p != null) setState(() => _date = p);
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.schedule),
+            label: Text('From ${_start.format(context)}'),
+            onPressed: () async {
+              final p = await showTimePicker(context: context, initialTime: _start);
+              if (p != null) setState(() => _start = p);
+            },
+          ),
+        ]),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           value: _activity,

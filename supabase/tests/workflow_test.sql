@@ -5,6 +5,9 @@
 create temporary table t(name text, passed boolean);
 grant all on t to authenticated;
 
+-- academy channels for the visibility test
+insert into public.channels (name, audience) values ('IDT representatives', 'IDT'), ('HVV representatives', 'HVV');
+
 -- ---------- users -----------------------------------------------------
 insert into auth.users (id, email, raw_user_meta_data) values
  ('00000000-0000-0000-0000-00000000000a', 'utbildning@mdsu.se',         '{"full_name":"Head of Education"}'),
@@ -69,6 +72,14 @@ select current_date - 39, 'preparation', id, 70, 'Read documents' from public.co
 insert into t select '1 rep sees own hours = 130', (select minutes from public.report_overview) = 130;
 insert into t select '1b estimated amount = 325 SEK', (select amount from public.report_overview) = 325;
 
+-- 1c. rounding per activity like the Excel sheet: 3 × 20 min = 3 started half hours (not 2)
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.time_entries (work_date, activity, minutes, start_time) values
+  (current_date, 'class_visit', 20, '10:00'), (current_date, 'class_visit', 20, '11:00'), (current_date, 'class_visit', 20, '12:00');
+insert into t select '1c per-activity rounding: 3×20 min = 3 half hours = 195 SEK',
+  (select half_hours from public.report_overview) = 3 and (select amount from public.report_overview) = 195;
+select from pg_temp.as_user('Lina Berg');
+
 -- 2. Lina cannot make herself union member / officer
 do $$ begin
   update public.profiles set role = 'officer' where id = auth.uid();
@@ -92,10 +103,10 @@ select m.council_id, m.id, 'Exam results late', 'Program coordinator' from publi
 
 -- 5. Lina cannot post announcements or in officer-only channel
 do $$ begin
-  insert into public.messages (channel_id, body) select id, 'hi' from public.channels where name = 'Announcements';
-  insert into t values ('5 rep cannot post in Announcements', false);
-exception when others then insert into t values ('5 rep cannot post in Announcements', true); end $$;
-insert into public.messages (channel_id, body) select id, 'Hello all' from public.channels where name = 'SR Lounge';
+  insert into public.messages (channel_id, body) select id, 'hi' from public.channels where name = 'SIEC';
+  insert into t values ('5 rep cannot post in SIEC (moderators only)', false);
+exception when others then insert into t values ('5 rep cannot post in SIEC (moderators only)', true); end $$;
+insert into public.messages (channel_id, body) select id, 'Hello all' from public.channels where name = 'Allmänt';
 insert into t select '5b rep sees IDT channel, not HVV', exists (select 1 from public.channels where name='IDT representatives')
                                                      and not exists (select 1 from public.channels where name='HVV representatives');
 
@@ -120,7 +131,7 @@ insert into t select '7 rep cannot see other reps time entries', (select count(*
 insert into public.time_entries (work_date, activity, minutes) values (current_date, 'student_input', 90);
 insert into t select '7b non-member amount = 0', (select amount from public.report_overview) = 0;
 insert into t select '7c report_overview shows only own row', (select count(*) from public.report_overview) = 1;
-insert into public.private_details (user_id, personal_number) values (auth.uid(), '19990101-1234');
+insert into public.private_details (user_id, personal_number, address) values (auth.uid(), '19990101-1234', 'Vägsgatan 1, 123 45 Ort');
 insert into t select '7d rep cannot see issue in other council', (select count(*) from public.issues) = 0;
 insert into t select '7e payroll empty for rep', (select count(*) from public.payroll_export()) = 0;
 do $$ begin
@@ -135,10 +146,12 @@ insert into t select '8b officer sees Omar personal number', (select count(*) fr
 select public.review_time_report((select report_id from public.report_overview where full_name='Lina Berg'), 'approve');
 insert into t select '8c approved amount snapshot 325', (select approved_amount from public.time_reports where status='approved') = 325;
 insert into public.messages (channel_id, body, is_announcement)
-  select id, 'Reports due 17 Jan', true from public.channels where name = 'Announcements';
+  select id, 'Reports due 17 Jan', true from public.channels where name = 'SIEC';
 insert into t select '8d announcement → notification per rep',
   (select count(*) from public.notifications where title = 'New announcement') = 0; -- officer cannot read others' notifications (RLS)
 insert into t select '8e payroll has 1 row (Lina approved)', (select count(*) from public.payroll_export()) = 1;
+insert into t select '8e2 payroll row has email + half hours', (select email from public.payroll_export()) = 'lina@student.mdu.se'
+  and (select started_half_hours from public.payroll_export()) = 5;
 insert into t select '8f open follow-up carried to CS #3',
   (select count(*) from public.open_issues_for_meeting((select id from public.meetings where title='CS #3'))) = 1;
 insert into t select '8g announcement read list = 3 reps', (select count(*) from public.announcement_reads((select id from public.messages where is_announcement))) = 3;

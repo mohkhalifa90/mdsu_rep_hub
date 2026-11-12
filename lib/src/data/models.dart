@@ -116,6 +116,7 @@ class TimeEntry {
   final String? meetingId;
   final int minutes;
   final String description;
+  final String? startTime; // 'HH:MM:SS'
   TimeEntry.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         userId = m['user_id'] as String,
@@ -124,7 +125,20 @@ class TimeEntry {
         councilId = m['council_id'] as String?,
         meetingId = m['meeting_id'] as String?,
         minutes = _int(m['minutes']),
-        description = (m['description'] ?? '') as String;
+        description = (m['description'] ?? '') as String,
+        startTime = m['start_time'] as String?;
+
+  /// Started half hours for this activity (rounded up, like the Excel time report)
+  int get halfHours => (minutes + 29) ~/ 30;
+
+  /// 'HH:MM' start and end, or null when no start time was given
+  String? get fromText => startTime == null ? null : startTime!.substring(0, 5);
+  String? get toText {
+    if (startTime == null) return null;
+    final p = startTime!.split(':');
+    final total = int.parse(p[0]) * 60 + int.parse(p[1]) + minutes;
+    return '${((total ~/ 60) % 24).toString().padLeft(2, '0')}:${(total % 60).toString().padLeft(2, '0')}';
+  }
 }
 
 class Attachment {
@@ -156,6 +170,7 @@ class ReportRow {
   final int entriesWithoutNotes;
   final int amount;
   final bool hasPersonalNumber;
+  final int halfHours;
 
   ReportRow.fromMap(Map<String, dynamic> m)
       : userId = m['user_id'] as String,
@@ -172,7 +187,8 @@ class ReportRow {
         entries = _int(m['entries']),
         entriesWithoutNotes = _int(m['entries_without_notes']),
         amount = _int(m['amount']),
-        hasPersonalNumber = (m['has_personal_number'] ?? false) as bool;
+        hasPersonalNumber = (m['has_personal_number'] ?? false) as bool,
+        halfHours = _int(m['half_hours']);
 
   bool get isLocked => status == 'submitted' || status == 'approved' || status == 'paid';
   bool get isDone => isLocked;
@@ -246,12 +262,14 @@ class Channel {
   final String description;
   final String audience;
   final bool officerOnly;
+  final int sortOrder;
   Channel.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         name = m['name'] as String,
         description = (m['description'] ?? '') as String,
         audience = m['audience'] as String,
-        officerOnly = (m['officer_only'] ?? false) as bool;
+        officerOnly = (m['officer_only'] ?? false) as bool,
+        sortOrder = _int(m['sort_order']);
 }
 
 class Message {
@@ -261,13 +279,17 @@ class Message {
   final String body;
   final bool isAnnouncement;
   final DateTime createdAt;
+  final String? filePath;
+  final String? fileName;
   Message.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         channelId = m['channel_id'] as String,
         authorId = m['author_id'] as String,
         body = m['body'] as String,
         isAnnouncement = (m['is_announcement'] ?? false) as bool,
-        createdAt = _dt(m['created_at']);
+        createdAt = _dt(m['created_at']),
+        filePath = m['file_path'] as String?,
+        fileName = m['file_name'] as String?;
 }
 
 class TutoringPost {

@@ -92,7 +92,8 @@ class _OfficerShellState extends State<OfficerShell> {
         final extended = MediaQuery.of(context).size.width > 1100;
         return Scaffold(
           appBar: AppBar(
-            title: Text('MDSU Rep Hub · ${_dest[_tab].$2}'),
+            leading: Padding(padding: const EdgeInsets.all(10), child: Image.asset('assets/logo_symbol.png')),
+            title: Text('Rep Hub · ${_dest[_tab].$2}'),
             actions: [
               if (d.semester != null)
                 Center(child: Padding(padding: const EdgeInsets.only(right: 12), child: Text(d.semester!.name))),
@@ -186,7 +187,10 @@ class _OverviewPageState extends State<OverviewPage> {
                         icon: const Icon(Icons.notifications_active_outlined),
                         label: const Text('Send reminder'),
                       )),
-                  if (notSubmitted.isEmpty) const EmptyState('Everyone has submitted 🎉'),
+                  if (o.reports.isEmpty)
+                    const EmptyState('No active representatives yet')
+                  else if (notSubmitted.isEmpty)
+                    const EmptyState('Everyone has submitted 🎉'),
                   for (final r in notSubmitted)
                     ListTile(
                       dense: true,

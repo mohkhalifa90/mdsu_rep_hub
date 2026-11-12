@@ -5,6 +5,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
+import 'agenda_docx.dart';
 import 'officer_shell.dart';
 
 /// Collects reps' agenda items per meeting + open follow-ups (auto carry-forward).
@@ -205,9 +206,28 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                     },
                     child: const Text('Ask reps for input'),
                   ),
+                FilledButton.icon(
+                  icon: const Icon(Icons.download),
+                  label: const Text('Agenda (Word)'),
+                  onPressed: () async {
+                    try {
+                      final where = await exportAgendaDocx(
+                        meeting: m,
+                        council: widget.data.council(m.councilId),
+                        followUps: fol,
+                        items: items,
+                        names: widget.names,
+                        nextMeeting: await nextMeetingAfter(m),
+                      );
+                      if (where != null && context.mounted) showSnack(context, 'Saved: $where');
+                    } catch (e) {
+                      if (context.mounted) showSnack(context, errorText(e));
+                    }
+                  },
+                ),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.description_outlined),
-                  label: const Text('Agenda text'),
+                  label: const Text('Copy text'),
                   onPressed: () async {
                     final text = _agendaText(fol, items);
                     await Clipboard.setData(ClipboardData(text: text));

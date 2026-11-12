@@ -57,12 +57,11 @@ class _LoginPageState extends State<LoginPage> {
             constraints: const BoxConstraints(maxWidth: 380),
             child: AutofillGroup(
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Icon(Icons.how_to_vote_outlined, size: 56, color: t.colorScheme.primary),
-                const SizedBox(height: 12),
-                Text('MDSU Rep Hub', textAlign: TextAlign.center, style: t.textTheme.headlineMedium),
+                Image.asset('assets/logo.png', height: 56),
+                const SizedBox(height: 20),
+                Text('Rep Hub', textAlign: TextAlign.center, style: t.textTheme.headlineSmall),
                 const SizedBox(height: 4),
-                Text('Mälardalen Student Union · Student representatives',
-                    textAlign: TextAlign.center, style: t.textTheme.bodySmall),
+                Text('Student representatives', textAlign: TextAlign.center, style: t.textTheme.bodySmall),
                 const SizedBox(height: 24),
                 SegmentedButton<bool>(
                   segments: const [

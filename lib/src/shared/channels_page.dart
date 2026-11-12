@@ -1,4 +1,6 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
@@ -20,16 +22,18 @@ class _ChannelsPageState extends State<ChannelsPage> {
 
   Future<(List<Channel>, Map<String, String>)> _load() async => (await Repo.channels(), await Repo.memberNames());
 
-  Future<void> _newChannel() async {
-    final name = TextEditingController(), desc = TextEditingController();
-    String audience = 'all';
-    final ok = await showDialog<bool>(
+  Future<void> _editChannel({Channel? channel}) async {
+    final name = TextEditingController(text: channel?.name ?? '');
+    final desc = TextEditingController(text: channel?.description ?? '');
+    String audience = channel?.audience ?? 'all';
+    bool officerOnly = channel?.officerOnly ?? false;
+    final result = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('New channel'),
+          title: Text(channel == null ? 'New channel' : 'Edit channel'),
           content: SizedBox(
-            width: 400,
+            width: 420,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
               const SizedBox(height: 10),
@@ -47,18 +51,47 @@ class _ChannelsPageState extends State<ChannelsPage> {
                 ],
                 onChanged: (v) => setD(() => audience = v ?? 'all'),
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Only the Head of Education can post'),
+                subtitle: const Text('Like a moderated Teams channel (e.g. SIEC, Resources)'),
+                value: officerOnly,
+                onChanged: (v) => setD(() => officerOnly = v),
+              ),
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+            if (channel != null)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'delete'),
+                child: const Text('Delete channel', style: TextStyle(color: Colors.red)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, 'save'), child: const Text('Save')),
           ],
         ),
       ),
     );
-    if (ok == true && name.text.trim().isNotEmpty) {
-      await runAction(context,
-          () => Repo.createChannel(name: name.text.trim(), description: desc.text.trim(), audience: audience));
+    if (result == 'delete' && channel != null) {
+      if (await confirm(context, 'Delete “${channel.name}”?', 'All messages and files in the channel are deleted.',
+              ok: 'Delete') &&
+          await runAction(context, () => Repo.deleteChannel(channel.id), success: 'Channel deleted')) {
+        setState(() {
+          _selected = null;
+          _f = _load();
+        });
+      }
+      return;
+    }
+    if (result == 'save' && name.text.trim().isNotEmpty) {
+      await runAction(
+          context,
+          () => Repo.saveChannel(
+              id: channel?.id,
+              name: name.text.trim(),
+              description: desc.text.trim(),
+              audience: audience,
+              officerOnly: officerOnly));
       setState(() => _f = _load());
     }
   }
@@ -73,7 +106,15 @@ class _ChannelsPageState extends State<ChannelsPage> {
         final list = ListView(children: [
           for (final c in channels)
             ListTile(
-              leading: Icon(c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined),
+              leading: Icon(c.name.toLowerCase().contains('resource')
+                  ? Icons.folder_outlined
+                  : (c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined)),
+              trailing: widget.me.isOfficer
+                  ? IconButton(
+                      tooltip: 'Edit channel',
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      onPressed: () => _editChannel(channel: c))
+                  : null,
               title: Text(c.name),
               subtitle: Text(c.description, maxLines: 1, overflow: TextOverflow.ellipsis),
               selected: widget.wide && _selected?.id == c.id,
@@ -92,7 +133,7 @@ class _ChannelsPageState extends State<ChannelsPage> {
               },
             ),
           if (widget.me.isOfficer)
-            ListTile(leading: const Icon(Icons.add), title: const Text('New channel'), onTap: _newChannel),
+            ListTile(leading: const Icon(Icons.add), title: const Text('New channel'), onTap: () => _editChannel()),
         ]);
         if (!widget.wide) return list;
         final sel = _selected ?? (channels.isEmpty ? null : channels.first);
@@ -122,6 +163,8 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   final _text = TextEditingController();
   bool _announcement = false;
+  bool _sending = false;
+  PlatformFile? _file;
   Set<String> _read = {};
   late final Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id);
 
@@ -137,11 +180,40 @@ class _ChatViewState extends State<ChatView> {
   bool get _canPost => !widget.channel.officerOnly || widget.me.isOfficer;
 
   Future<void> _send() async {
-    final body = _text.text.trim();
-    if (body.isEmpty) return;
-    final ok = await runAction(
-        context, () => Repo.sendMessage(widget.channel.id, body, announcement: widget.me.isOfficer && _announcement));
-    if (ok) _text.clear();
+    final text = _text.text.trim();
+    if (text.isEmpty && _file == null) return;
+    setState(() => _sending = true);
+    final ok = await runAction(context, () async {
+      String? path;
+      if (_file?.bytes != null) path = await Repo.uploadChannelFile(_file!.name, _file!.bytes!);
+      await Repo.sendMessage(widget.channel.id, text.isEmpty ? '📎 ${_file!.name}' : text,
+          announcement: widget.me.isOfficer && _announcement, filePath: path, fileName: _file?.name);
+    });
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      if (ok) {
+        _text.clear();
+        _file = null;
+      }
+    });
+  }
+
+  Future<void> _pickFile() async {
+    final r = await FilePicker.platform.pickFiles(withData: true);
+    final f = r?.files.single;
+    if (f == null) return;
+    if ((f.size) > 20 * 1024 * 1024) return showSnack(context, 'Files up to 20 MB');
+    setState(() => _file = f);
+  }
+
+  Future<void> _openFile(Message m) async {
+    try {
+      final url = await Repo.channelFileUrl(m.filePath!);
+      await launchUrl(Uri.parse(url));
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
   }
 
   Future<void> _showReads(Message m) async {
@@ -208,6 +280,15 @@ class _ChatViewState extends State<ChatView> {
                         ),
                         const SizedBox(height: 4),
                         SelectableText(m.body),
+                        if (m.filePath != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: ActionChip(
+                              avatar: const Icon(Icons.attach_file, size: 16),
+                              label: Text(m.fileName ?? 'File', overflow: TextOverflow.ellipsis),
+                              onPressed: () => _openFile(m),
+                            ),
+                          ),
                         if (m.isAnnouncement && widget.me.isOfficer)
                           TextButton.icon(
                               onPressed: () => _showReads(m),
@@ -246,7 +327,17 @@ class _ChatViewState extends State<ChatView> {
                 onChanged: (v) => setState(() => _announcement = v ?? false),
                 title: const Text('Announcement (push + read confirmation)'),
               ),
+            if (_file != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  avatar: const Icon(Icons.attach_file, size: 16),
+                  label: Text(_file!.name),
+                  onDeleted: () => setState(() => _file = null),
+                ),
+              ),
             Row(children: [
+              IconButton(tooltip: 'Attach file', onPressed: _pickFile, icon: const Icon(Icons.attach_file)),
               Expanded(
                 child: TextField(
                   controller: _text,
@@ -256,7 +347,7 @@ class _ChatViewState extends State<ChatView> {
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton.filled(onPressed: _send, icon: const Icon(Icons.send)),
+              IconButton.filled(onPressed: _sending ? null : _send, icon: const Icon(Icons.send)),
             ]),
           ]),
         )

@@ -12,6 +12,13 @@ void main() {
     test('custom rate', () => expect(payAmount(60, member: true, halfHourRate: 70), 140));
   });
 
+  group('payForActivities (rounded per row, like the Excel time report)', () {
+    test('3 × 20 min = 3 half hours = 195 SEK', () => expect(payForActivities([20, 20, 20], member: true), 195));
+    test('60 + 70 min = 2 + 3 half hours = 325 SEK', () => expect(payForActivities([60, 70], member: true), 325));
+    test('non-member', () => expect(payForActivities([60, 70], member: false), 0));
+    test('empty', () => expect(payForActivities(const [], member: true), 0));
+  });
+
   group('formatting', () {
     test('fmtMinutes', () {
       expect(fmtMinutes(45), '45m');
