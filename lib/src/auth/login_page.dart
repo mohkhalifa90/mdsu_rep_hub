@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../data/repo.dart';
 import '../shared/widgets.dart';
 
-/// Sign in with student / union email: we send a 6-digit code, no password needed.
+/// Sign in or create an account with email + password.
+/// New accounts see nothing until the Head of Education activates them.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -11,24 +12,37 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final _name = TextEditingController();
   final _email = TextEditingController();
-  final _code = TextEditingController();
-  bool _codeSent = false;
+  final _password = TextEditingController();
+  final _password2 = TextEditingController();
+  bool _create = false;
   bool _busy = false;
+  bool _hide = true;
 
-  Future<void> _send() async {
-    if (!_email.text.contains('@')) return showSnack(context, 'Enter your student email');
+  Future<void> _submit() async {
+    final email = _email.text.trim();
+    final pw = _password.text;
+    if (!email.contains('@')) return showSnack(context, 'Enter your student email');
+    if (pw.length < 8) return showSnack(context, 'The password must be at least 8 characters');
+    if (_create) {
+      if (_name.text.trim().isEmpty) return showSnack(context, 'Enter your full name');
+      if (pw != _password2.text) return showSnack(context, 'The two passwords are not the same');
+    }
     setState(() => _busy = true);
-    final ok = await runAction(context, () => Repo.sendCode(_email.text));
-    setState(() {
-      _busy = false;
-      _codeSent = ok;
-    });
-  }
-
-  Future<void> _verify() async {
-    setState(() => _busy = true);
-    await runAction(context, () => Repo.verifyCode(_email.text, _code.text));
+    try {
+      if (_create) {
+        final signedIn = await Repo.signUp(email: email, password: pw, fullName: _name.text.trim());
+        if (!signedIn && mounted) {
+          showSnack(context, 'Account created. Check your email to confirm it, then sign in.');
+          setState(() => _create = false);
+        }
+      } else {
+        await Repo.signIn(email: email, password: pw);
+      }
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
     if (mounted) setState(() => _busy = false);
   }
 
@@ -41,48 +55,82 @@ class _LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Icon(Icons.how_to_vote_outlined, size: 56, color: t.colorScheme.primary),
-              const SizedBox(height: 12),
-              Text('MDSU Rep Hub', textAlign: TextAlign.center, style: t.textTheme.headlineMedium),
-              const SizedBox(height: 4),
-              Text('Mälardalen Student Union · Student representatives',
-                  textAlign: TextAlign.center, style: t.textTheme.bodySmall),
-              const SizedBox(height: 28),
-              TextField(
-                controller: _email,
-                enabled: !_codeSent,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-                decoration: const InputDecoration(labelText: 'Student email', hintText: 'name@student.mdu.se'),
-                onSubmitted: (_) => _send(),
-              ),
-              if (_codeSent) ...[
+            child: AutofillGroup(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Icon(Icons.how_to_vote_outlined, size: 56, color: t.colorScheme.primary),
+                const SizedBox(height: 12),
+                Text('MDSU Rep Hub', textAlign: TextAlign.center, style: t.textTheme.headlineMedium),
+                const SizedBox(height: 4),
+                Text('Mälardalen Student Union · Student representatives',
+                    textAlign: TextAlign.center, style: t.textTheme.bodySmall),
+                const SizedBox(height: 24),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Sign in')),
+                    ButtonSegment(value: true, label: Text('Create account')),
+                  ],
+                  selected: {_create},
+                  onSelectionChanged: (s) => setState(() => _create = s.first),
+                ),
+                const SizedBox(height: 16),
+                if (_create) ...[
+                  TextField(
+                    controller: _name,
+                    textCapitalization: TextCapitalization.words,
+                    autofillHints: const [AutofillHints.name],
+                    decoration: const InputDecoration(labelText: 'Full name'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  decoration: const InputDecoration(labelText: 'Student email', hintText: 'name@student.mdu.se'),
+                ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: _code,
-                  keyboardType: TextInputType.number,
-                  autofillHints: const [AutofillHints.oneTimeCode],
-                  decoration: const InputDecoration(labelText: 'Code from the email'),
-                  onSubmitted: (_) => _verify(),
+                  controller: _password,
+                  obscureText: _hide,
+                  autofillHints: [_create ? AutofillHints.newPassword : AutofillHints.password],
+                  decoration: InputDecoration(
+                    labelText: 'Password (at least 8 characters)',
+                    suffixIcon: IconButton(
+                      icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                      onPressed: () => setState(() => _hide = !_hide),
+                    ),
+                  ),
+                  onSubmitted: (_) => _create ? null : _submit(),
                 ),
-              ],
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy ? null : (_codeSent ? _verify : _send),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(_codeSent ? 'Sign in' : 'Send me a code'),
+                if (_create) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _password2,
+                    obscureText: _hide,
+                    decoration: const InputDecoration(labelText: 'Repeat password'),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _busy ? null : _submit,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(_create ? 'Create account' : 'Sign in'),
+                  ),
                 ),
-              ),
-              if (_codeSent)
-                TextButton(
-                    onPressed: () => setState(() {
-                          _codeSent = false;
-                          _code.clear();
-                        }),
-                    child: const Text('Use another email')),
-            ]),
+                if (_create)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      'After you create your account, the Head of Education activates it '
+                      'when you are appointed as a student representative.',
+                      textAlign: TextAlign.center,
+                      style: t.textTheme.bodySmall,
+                    ),
+                  ),
+              ]),
+            ),
           ),
         ),
       ),

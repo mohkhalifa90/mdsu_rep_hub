@@ -36,22 +36,19 @@ supabase/
    select cron.schedule('mdsu-daily-automations', '5 6 * * *', 'select public.run_automations()');
    ```
 
-### 2) تسجيل الدخول بكود على الإيميل
-1. من **Authentication → Providers** اتأكد إن **Email** شغال.
-2. من **Authentication → Email Templates → Magic Link** حط الكود في الرسالة، مثلاً:
-   ```html
-   <h2>MDSU Rep Hub</h2>
-   <p>Your sign-in code: <strong>{{ .Token }}</strong></p>
-   ```
-   كده الطالب بيستلم كود من 6 أرقام يكتبه في التطبيق، من غير باسورد ومن غير لينكات.
+### 2) تسجيل الدخول بالإيميل والباسورد
+1. من **Authentication** ← **Sign In / Providers** ← **Email**، اقفل **Confirm email** ودوس **Save**.
+   - السبب: الإيميل المجاني بتاع Supabase ما بيبعتش غير لأعضاء فريق المشروع، فالممثلين ما كانش هيوصلهم إيميل التأكيد.
+   - الأمان مش بيتأثر، لأن أي حساب جديد ما بيشوفش حاجة لحد ما مسؤول التعليم يفعّله.
+2. **بعدين، اختياري:** لو وصّلت إيميل حقيقي (Authentication ← Emails ← **Set up SMTP**)، تقدر ترجّع **Confirm email** وتضيف "نسيت الباسورد".
 
 ### 3) أول حساب لمسؤول التعليم
-1. شغّل التطبيق (الخطوة 4) وسجّل دخول بإيميل مسؤول التعليم.
+1. شغّل التطبيق (الخطوة 4)، واختار **Create account**، واعمل حساب بإيميل مسؤول التعليم.
 2. ارجع لـ **SQL Editor** في Supabase وشغّل:
    ```sql
    update public.profiles set role = 'officer', active = true where email = 'utbildning@mdsu.se';
    ```
-3. أي ممثل جديد بيسجّل دخول بإيميل الطالب بتاعه وبيظهر لمسؤول التعليم في صفحة **Representatives** باللون الرمادي. مسؤول التعليم بيفعّله ويحدد البرنامج والمجالس والعضوية. **قبل التفعيل الحساب مش بيشوف أي حاجة** غير صفحة "في انتظار الموافقة".
+3. أي ممثل جديد بيعمل حساب بإيميل الطالب بتاعه وبيظهر لمسؤول التعليم في صفحة **Representatives** باللون الرمادي. مسؤول التعليم بيفعّله ويحدد البرنامج والمجالس والعضوية. **قبل التفعيل الحساب مش بيشوف أي حاجة** غير صفحة "في انتظار الموافقة".
 
 ### 4) تشغيل التطبيق على جهازك
 محتاج تكون مسطّب [Flutter](https://docs.flutter.dev/get-started/install). من **Project Settings → API** في Supabase خد الـ **Project URL** والـ **anon public key**، وبعدين:

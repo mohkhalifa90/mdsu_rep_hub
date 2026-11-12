@@ -16,6 +16,16 @@ class Repo {
       (rows as List).map((r) => f(Map<String, dynamic>.from(r as Map))).toList();
 
   // ---------- auth & profile ----------
+  static Future<void> signIn({required String email, required String password}) =>
+      sb.auth.signInWithPassword(email: email, password: password);
+
+  /// Returns true when the user is signed in right away (email confirmation switched off in Supabase).
+  static Future<bool> signUp({required String email, required String password, required String fullName}) async {
+    final res = await sb.auth.signUp(email: email, password: password, data: {'full_name': fullName});
+    return res.session != null;
+  }
+
+  // Sign-in with an emailed code (needs custom SMTP in Supabase; not used by the app right now)
   static Future<void> sendCode(String email) =>
       sb.auth.signInWithOtp(email: email.trim(), shouldCreateUser: true);
 
