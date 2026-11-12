@@ -41,7 +41,14 @@ class _LoginPageState extends State<LoginPage> {
         await Repo.signIn(email: email, password: pw);
       }
     } catch (e) {
-      if (mounted) showSnack(context, errorText(e));
+      final msg = errorText(e);
+      if (mounted) {
+        showSnack(
+            context,
+            _create && (msg.contains('Database error') || msg.contains('EMAIL_DOMAIN'))
+                ? 'Use your student email (…@student.mdu.se). Other email addresses cannot create an account.'
+                : msg);
+      }
     }
     if (mounted) setState(() => _busy = false);
   }

@@ -169,6 +169,22 @@ Future<bool> pickAndUploadNote(BuildContext context, String entryId) async {
 
 /// Bottom sheet to log an activity. Returns true when saved.
 Future<bool> showLogTimeSheet(BuildContext context, RepData d, {String? meetingId}) async {
+  // A submitted report is locked: explain instead of opening a form that cannot be saved
+  final report = await Repo.myReport();
+  if (!context.mounted) return false;
+  if (report != null && report.isLocked) {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Your time report is already sent'),
+        content: Text('Your report for ${d.semester?.name ?? 'this semester'} is '
+            '${(reportStatusLabels[report.status] ?? report.status).toLowerCase()}, so new hours cannot be added. '
+            'If you forgot something, ask the Head of Education to return the report to you.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+    return false;
+  }
   final meetings = await Repo.meetings();
   if (!context.mounted) return false;
   final saved = await showModalBottomSheet<bool>(
@@ -202,6 +218,7 @@ class _LogTimeFormState extends State<_LogTimeForm> {
   final _desc = TextEditingController();
   PlatformFile? _file;
   bool _busy = false;
+  String? _error; // shown inside the sheet (a snackbar would be hidden behind it)
 
   @override
   void initState() {
@@ -245,15 +262,18 @@ class _LogTimeFormState extends State<_LogTimeForm> {
     );
     if (ok != true) return;
     final total = (int.tryParse(h.text) ?? 0) * 60 + (int.tryParse(m.text) ?? 0);
-    if (total <= 0 || total > 720) return showSnack(context, 'Enter between 1 minute and 12 hours');
+    if (total <= 0 || total > 720) return setState(() => _error = 'Enter between 1 minute and 12 hours');
     setState(() => _minutes = total);
   }
 
   Future<void> _save() async {
     if (_activity == 'other' && _desc.text.trim().isEmpty) {
-      return showSnack(context, 'Describe what you did');
+      return setState(() => _error = 'Describe what you did');
     }
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       final id = await Repo.addEntry(
         date: _date,
@@ -272,8 +292,12 @@ class _LogTimeFormState extends State<_LogTimeForm> {
         Navigator.pop(context, true);
       }
     } catch (e) {
-      if (mounted) showSnack(context, errorText(e));
-      setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = errorText(e);
+        });
+      }
     }
   }
 
@@ -389,10 +413,22 @@ class _LogTimeFormState extends State<_LogTimeForm> {
           'association meetings not about student influence.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        if (_error != null)
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+            child: Text(_error!, style: TextStyle(color: Colors.red.shade900)),
+          ),
         const SizedBox(height: 16),
         FilledButton(
           onPressed: _busy ? null : _save,
-          child: const Padding(padding: EdgeInsets.all(12), child: Text('Save')),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: _busy
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Save'),
+          ),
         ),
       ]),
     );

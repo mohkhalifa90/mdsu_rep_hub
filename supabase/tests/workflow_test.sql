@@ -15,7 +15,11 @@ insert into auth.users (id, email, raw_user_meta_data) values
  ('00000000-0000-0000-0000-000000000002', 'omar@student.mdu.se',        '{"full_name":"Omar Haddad"}'),
  ('00000000-0000-0000-0000-000000000003', 'ahmed@student.mdu.se',       '{"full_name":"Ahmed Saleh"}');
 -- 0. new accounts are inactive and see nothing
-insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000ff', 'stranger@gmail.com');
+do $$ begin
+  insert into auth.users (email) values ('someone@gmail.com');
+  insert into t values ('0x sign-up with gmail is rejected', false);
+exception when others then insert into t values ('0x sign-up with gmail is rejected', sqlerrm like 'EMAIL_DOMAIN_NOT_ALLOWED%'); end $$;
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000ff', 'stranger@student.mdu.se');
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000ff', false);
 insert into t select '0 unapproved account sees no channels', (select count(*) from public.channels) = 0;
@@ -29,7 +33,7 @@ do $$ begin
 exception when others then insert into t values ('0d unapproved account cannot log time', true); end $$;
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
-update public.profiles set active = true where email <> 'stranger@gmail.com';
+update public.profiles set active = true where email <> 'stranger@student.mdu.se';
 update public.profiles set role = 'officer' where email = 'utbildning@mdsu.se';
 update public.profiles set academy='IDT', program='Computer Science', study_year=2, is_member=true  where full_name='Lina Berg';
 update public.profiles set academy='HVV', program='Nursing',          study_year=3, is_member=false where full_name='Omar Haddad';
@@ -194,6 +198,23 @@ set role authenticated;
 select from pg_temp.as_user('Head of Education');
 delete from public.councils where name = 'Temp 2';
 insert into t select '9h council with locked report hours can be deleted', (select count(*) from public.councils where name='Temp 2') = 0;
+
+-- 9i. deleting a user who raised an issue and logged hours removes their data, keeps the issue
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000dd', 'temp.rep@student.mdu.se');
+update public.profiles set active = true where id = '00000000-0000-0000-0000-0000000000dd';
+insert into public.council_members select c.id, '00000000-0000-0000-0000-0000000000dd' from public.councils c where c.name like 'Program council – Computer%';
+insert into public.time_entries (user_id, work_date, activity, minutes) values ('00000000-0000-0000-0000-0000000000dd', current_date, 'class_visit', 30);
+insert into public.issues (council_id, raised_by, title) select id, '00000000-0000-0000-0000-0000000000dd', 'Temp issue' from public.councils where name like 'Program council – Computer%';
+insert into public.time_reports (user_id, semester_id, status) select '00000000-0000-0000-0000-0000000000dd', id, 'approved' from public.semesters where is_current;
+delete from auth.users where id = '00000000-0000-0000-0000-0000000000dd';
+insert into t select '9i deleted user with approved report: hours gone, issue kept',
+  not exists (select 1 from public.time_entries where user_id = '00000000-0000-0000-0000-0000000000dd')
+  and exists (select 1 from public.issues where title = 'Temp issue' and raised_by is null);
+delete from public.issues where title = 'Temp issue';
+set role authenticated;
+select from pg_temp.as_user('Head of Education');
 
 -- 10. back as Lina: notifications arrived, mark read
 select from pg_temp.as_user('Lina Berg');
