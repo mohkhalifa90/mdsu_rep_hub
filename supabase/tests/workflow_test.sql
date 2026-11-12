@@ -78,6 +78,8 @@ insert into public.time_entries (work_date, activity, minutes, start_time) value
   (current_date, 'class_visit', 20, '10:00'), (current_date, 'class_visit', 20, '11:00'), (current_date, 'class_visit', 20, '12:00');
 insert into t select '1c per-activity rounding: 3×20 min = 3 half hours = 195 SEK',
   (select half_hours from public.report_overview) = 3 and (select amount from public.report_overview) = 195;
+insert into public.time_entries (work_date, activity, minutes, description) values (current_date, 'materials', 45, 'Made a survey');
+insert into t select '1d new work types (material, no council) can be logged', (select count(*) from public.time_entries where activity = 'materials') = 1;
 select from pg_temp.as_user('Lina Berg');
 
 -- 2. Lina cannot make herself union member / officer

@@ -23,6 +23,9 @@ const activityLabels = <String, String>{
   'student_input': 'Gathering student input / student errands',
   'class_visit': 'Class visit',
   'teams_email': 'Teams & email (education related)',
+  'materials': 'Preparing material (presentations, surveys, guides)',
+  'task': 'Task from MDSU / Head of Education',
+  'other': 'Other education-related work (describe it)',
 };
 
 const agendaSources = [

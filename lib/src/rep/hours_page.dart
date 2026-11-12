@@ -206,8 +206,7 @@ class _LogTimeFormState extends State<_LogTimeForm> {
   @override
   void initState() {
     super.initState();
-    final mine = widget.data.myCouncils;
-    _council = mine.isEmpty ? null : mine.first.id;
+    _council = null; // optional: not all work belongs to a council
     final m = widget.meetings.where((m) => m.id == widget.meetingId).toList();
     if (m.isNotEmpty) {
       _meeting = m.first.id;
@@ -220,7 +219,40 @@ class _LogTimeFormState extends State<_LogTimeForm> {
     }
   }
 
+  Future<void> _customDuration() async {
+    final h = TextEditingController(text: '${_minutes ~/ 60}');
+    final m = TextEditingController(text: '${_minutes % 60}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('How long?'),
+        content: Row(children: [
+          Expanded(
+              child: TextField(
+                  controller: h, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Hours'))),
+          const SizedBox(width: 10),
+          Expanded(
+              child: TextField(
+                  controller: m,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Minutes'))),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('OK')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final total = (int.tryParse(h.text) ?? 0) * 60 + (int.tryParse(m.text) ?? 0);
+    if (total <= 0 || total > 720) return showSnack(context, 'Enter between 1 minute and 12 hours');
+    setState(() => _minutes = total);
+  }
+
   Future<void> _save() async {
+    if (_activity == 'other' && _desc.text.trim().isEmpty) {
+      return showSnack(context, 'Describe what you did');
+    }
     setState(() => _busy = true);
     try {
       final id = await Repo.addEntry(
@@ -292,11 +324,14 @@ class _LogTimeFormState extends State<_LogTimeForm> {
           onChanged: (v) => setState(() => _activity = v ?? _activity),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
+        DropdownButtonFormField<String?>(
           value: _council,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Council'),
-          items: [for (final c in d.myCouncils) DropdownMenuItem(value: c.id, child: Text(c.name))],
+          decoration: const InputDecoration(labelText: 'Council (optional)'),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('No specific council')),
+            for (final c in d.myCouncils) DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
+          ],
           onChanged: (v) => setState(() {
             _council = v;
             _meeting = null;
@@ -323,9 +358,21 @@ class _LogTimeFormState extends State<_LogTimeForm> {
               selected: _minutes == m,
               onSelected: (_) => setState(() => _minutes = m),
             ),
+          ActionChip(
+            avatar: const Icon(Icons.edit, size: 16),
+            label: const Text('Other…'),
+            onPressed: _customDuration,
+          ),
         ]),
         const SizedBox(height: 12),
-        TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
+        TextField(
+          controller: _desc,
+          maxLines: 2,
+          decoration: InputDecoration(
+            labelText: _activity == 'other' ? 'Description (required)' : 'Description',
+            hintText: 'e.g. Made a survey about the exam schedule',
+          ),
+        ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
           icon: const Icon(Icons.attach_file),
@@ -337,6 +384,7 @@ class _LogTimeFormState extends State<_LogTimeForm> {
         ),
         const SizedBox(height: 8),
         Text(
+          'Log any work for your role – meetings, preparing material, tasks, student input. '
           'Does not count: chats not about education, travel time without work, '
           'association meetings not about student influence.',
           style: Theme.of(context).textTheme.bodySmall,

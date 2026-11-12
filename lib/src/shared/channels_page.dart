@@ -369,9 +369,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
   final Stream<List<AppNotification>> _stream = Repo.notificationStream();
 
   @override
-  void dispose() {
-    Repo.markAllNotificationsRead();
-    super.dispose();
+  void initState() {
+    super.initState();
+    // Opening the page counts as reading them: the bell's red counter goes away
+    Repo.markAllNotificationsRead().catchError((_) {});
   }
 
   @override
@@ -418,7 +419,7 @@ class NotificationBell extends StatefulWidget {
 }
 
 class _NotificationBellState extends State<NotificationBell> {
-  final Stream<List<AppNotification>> _stream = Repo.notificationStream();
+  Stream<List<AppNotification>> _stream = Repo.notificationStream();
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppNotification>>(
@@ -427,8 +428,13 @@ class _NotificationBellState extends State<NotificationBell> {
           final unread = (snap.data ?? const <AppNotification>[]).where((n) => n.readAt == null).length;
           return IconButton(
             tooltip: 'Notifications',
-            onPressed: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => NotificationsPage(onOpen: widget.onOpen))),
+            onPressed: () async {
+              await Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => NotificationsPage(onOpen: widget.onOpen)));
+              await Repo.markAllNotificationsRead().catchError((_) {});
+              // read the list again so the counter is up to date
+              if (mounted) setState(() => _stream = Repo.notificationStream());
+            },
             icon: Badge(
               isLabelVisible: unread > 0,
               label: Text('$unread'),

@@ -223,6 +223,16 @@ class _RepHomePageState extends State<RepHomePage> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            if (d.semester != null)
+              FilledButton.icon(
+                onPressed: () async {
+                  if (await showLogTimeSheet(context, d)) widget.onChanged();
+                },
+                icon: const Icon(Icons.add),
+                label: const Padding(
+                    padding: EdgeInsets.all(10), child: Text('Log time – meeting, task, material…')),
+              ),
             if (todos.isNotEmpty) ...[const SectionTitle('To do'), ...todos],
             const SectionTitle('Upcoming meetings'),
             if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
