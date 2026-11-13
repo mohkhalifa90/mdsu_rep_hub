@@ -52,6 +52,8 @@ jobs:
         with: { deno-version: v2.x }
       - run: deno check supabase/functions/send-push/index.ts
       - run: deno test --allow-net --allow-env supabase/functions/send-push/index.test.ts
+      - run: deno check supabase/functions/admin-reset-password/index.ts
+      - run: deno test --allow-net --allow-env supabase/functions/admin-reset-password/index.test.ts
 
   check:
     name: Analyze & test

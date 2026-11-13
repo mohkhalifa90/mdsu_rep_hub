@@ -1,11 +1,22 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../data/repo.dart';
 
 /// Turns server errors into readable text.
 String errorText(Object e) {
   if (e is PostgrestException) return e.message;
   if (e is AuthException) return e.message;
   if (e is StorageException) return e.message;
+  if (e is FunctionException) {
+    final d = e.details;
+    if (d is Map && d['error'] != null) return '${d['error']}';
+    return 'Server error (${e.status})';
+  }
+  if (e is Exception) return e.toString().replaceFirst('Exception: ', '');
   return e.toString();
 }
 
@@ -207,3 +218,123 @@ Future<bool> confirm(BuildContext context, String title, String body, {String ok
       ),
     )) ??
     false;
+
+
+/// Easy-to-read temporary password, e.g. "Mdsu-7KQ4-PX2N" (no 0/O or 1/l)
+String generateTempPassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  final r = Random.secure();
+  String part() => List.generate(4, (_) => chars[r.nextInt(chars.length)]).join();
+  return 'Mdsu-${part()}-${part()}';
+}
+
+/// "Change my password" for the signed-in user.
+Future<void> showChangePasswordDialog(BuildContext context) async {
+  final p1 = TextEditingController(), p2 = TextEditingController();
+  String? error;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: const Text('Change my password'),
+        content: SizedBox(
+          width: 380,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: p1, obscureText: true, decoration: const InputDecoration(labelText: 'New password (8+ characters)')),
+            const SizedBox(height: 10),
+            TextField(controller: p2, obscureText: true, decoration: const InputDecoration(labelText: 'Repeat new password')),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(error!, style: TextStyle(color: Colors.red.shade800)),
+              ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              if (p1.text.length < 8) return setD(() => error = 'At least 8 characters');
+              if (p1.text != p2.text) return setD(() => error = 'The two passwords are not the same');
+              try {
+                await Repo.changeMyPassword(p1.text);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) showSnack(context, 'Password changed ✓');
+              } catch (e) {
+                setD(() => error = errorText(e));
+              }
+            },
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Head of Education: give a representative a temporary password.
+Future<void> showResetPasswordDialog(BuildContext context, {required String userId, required String name}) async {
+  final pw = TextEditingController(text: generateTempPassword());
+  String? error;
+  bool done = false, busy = false;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text(done ? 'Password reset ✓' : 'Reset password for $name'),
+        content: SizedBox(
+          width: 420,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(done
+                ? 'Give $name this temporary password (in person, by phone or Teams). '
+                    'They should change it under More → My profile.'
+                : 'Check that you are talking to $name before you reset the password.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pw,
+              readOnly: done,
+              decoration: InputDecoration(
+                labelText: 'Temporary password',
+                suffixIcon: IconButton(
+                  tooltip: 'Copy',
+                  icon: const Icon(Icons.copy),
+                  onPressed: () => Clipboard.setData(ClipboardData(text: pw.text)),
+                ),
+              ),
+            ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(error!, style: TextStyle(color: Colors.red.shade800)),
+              ),
+          ]),
+        ),
+        actions: done
+            ? [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done'))]
+            : [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (pw.text.length < 8) return setD(() => error = 'At least 8 characters');
+                          setD(() {
+                            busy = true;
+                            error = null;
+                          });
+                          try {
+                            await Repo.adminResetPassword(userId, pw.text);
+                            setD(() => done = true);
+                          } catch (e) {
+                            setD(() => error = errorText(e));
+                          }
+                          setD(() => busy = false);
+                        },
+                  child: const Text('Reset password'),
+                ),
+              ],
+      ),
+    ),
+  );
+}

@@ -171,6 +171,13 @@ class _RepsPageState extends State<RepsPage> {
             ),
           ),
           actions: [
+            if (p.id != widget.data.me.id)
+              TextButton.icon(
+                icon: const Icon(Icons.key_outlined),
+                label: const Text('Reset password…'),
+                onPressed: () => showResetPasswordDialog(ctx,
+                    userId: p.id, name: p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
+              ),
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
             FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
           ],

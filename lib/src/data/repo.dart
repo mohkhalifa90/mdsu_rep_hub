@@ -37,6 +37,18 @@ class Repo {
     await sb.auth.signOut();
   }
 
+  /// Any signed-in user changes their own password.
+  static Future<void> changeMyPassword(String password) => sb.auth.updateUser(UserAttributes(password: password));
+
+  /// Head of Education sets a temporary password for a representative (Edge Function admin-reset-password).
+  static Future<void> adminResetPassword(String userId, String password) async {
+    final res = await sb.functions.invoke('admin-reset-password', body: {'user_id': userId, 'password': password});
+    final data = res.data;
+    if (res.status != 200 || (data is Map && data['ok'] != true)) {
+      throw Exception(data is Map && data['error'] != null ? '${data['error']}' : 'Could not reset the password');
+    }
+  }
+
   static Future<void> saveDeviceToken(String token, String platform) =>
       sb.rpc('register_device', params: {'p_token': token, 'p_platform': platform});
 

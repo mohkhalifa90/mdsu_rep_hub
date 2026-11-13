@@ -99,6 +99,10 @@ class _OfficerShellState extends State<OfficerShell> {
                 Center(child: Padding(padding: const EdgeInsets.only(right: 12), child: Text(d.semester!.name))),
               NotificationBell(onOpen: _openLink),
               IconButton(tooltip: 'Refresh', onPressed: _reload, icon: const Icon(Icons.refresh)),
+              IconButton(
+                  tooltip: 'Change my password',
+                  onPressed: () => showChangePasswordDialog(context),
+                  icon: const Icon(Icons.key_outlined)),
               IconButton(tooltip: 'Sign out', onPressed: Repo.signOut, icon: const Icon(Icons.logout)),
             ],
           ),

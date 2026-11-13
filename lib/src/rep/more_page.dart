@@ -317,6 +317,12 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
       const SizedBox(height: 10),
       FilledButton(onPressed: _savePrivate, child: const Text('Save payment details')),
+      const Divider(height: 32),
+      OutlinedButton.icon(
+        onPressed: () => showChangePasswordDialog(context),
+        icon: const Icon(Icons.key_outlined),
+        label: const Text('Change my password'),
+      ),
     ]);
   }
 }

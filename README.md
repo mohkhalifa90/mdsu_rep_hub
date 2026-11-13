@@ -20,6 +20,7 @@ supabase/
   seed.sql                  بيانات البداية (المجالس والقنوات والترم الحالي)
   tests/                    46 اختبار للصلاحيات وسير العمل
   functions/send-push/      دالة بتبعت الإشعار للموبايل + اختباراتها
+  functions/admin-reset-password/  دالة مسؤول التعليم لعمل باسورد مؤقت + اختباراتها
 .github/workflows/build.yml بناء تلقائي لكل المنصات
 ```
 
@@ -70,6 +71,15 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
    - فحص الكود.
    - بناء **APK للأندرويد** ونسخة **Windows** و **macOS** و **web**، تلاقيهم في تبويب **Actions → Artifacts** جاهزين للتحميل.
    - بناء iOS للتأكد إن الكود بيشتغل عليه. النشر على App Store محتاج حساب Apple Developer (99 دولار في السنة)، والنشر على Google Play محتاج رسوم 25 دولار مرة واحدة.
+
+### 5-ب) زرار "Reset password" لمسؤول التعليم
+لو ممثل نسي الباسورد، مسؤول التعليم بيحطله باسورد مؤقت من **Representatives** ← اسم الممثل ← **Reset password…**. ده محتاج دالة صغيرة على Supabase، بتتركّب مرة واحدة:
+1. Supabase ← **Edge Functions** ← **Deploy a new function** ← **Via Editor**.
+2. **Name:** `admin-reset-password`
+3. امسح الكود اللي في المحرر، والزق محتوى ملف `supabase/functions/admin-reset-password/index.ts`.
+4. دوس **Deploy function**. سيب **Verify JWT** شغّال، لأن ده اللي بيتأكد إن اللي بيطلب مسجّل دخول.
+
+الدالة بتتأكد إن اللي بيطلب هو مسؤول التعليم قبل ما تغيّر أي باسورد. وأي حد يقدر يغيّر الباسورد بتاعه بنفسه: الممثل من **More ← My profile ← Change my password**، ومسؤول التعليم من أيقونة 🔑 فوق.
 
 ### 6) إشعارات الموبايل (والتطبيق مقفول)
 التطبيق شغال من غير الخطوة دي، بس الإشعارات هتبان جوه التطبيق بس. عشان توصل على الموبايل زي رسايل واتساب:
