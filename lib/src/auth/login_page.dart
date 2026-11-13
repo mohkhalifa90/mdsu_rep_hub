@@ -47,7 +47,11 @@ class _LoginPageState extends State<LoginPage> {
             context,
             _create && (msg.contains('Database error') || msg.contains('EMAIL_DOMAIN'))
                 ? 'Use your student email (…@student.mdu.se). Other email addresses cannot create an account.'
-                : msg);
+                : (msg.toLowerCase().contains('invalid login')
+                    ? 'Wrong email or password. Forgot it? Tap “Forgot password?” below.'
+                    : (msg.toLowerCase().contains('already registered')
+                        ? 'This email already has an account. Choose “Sign in” instead.'
+                        : msg)));
       }
     }
     if (mounted) setState(() => _busy = false);
@@ -125,6 +129,21 @@ class _LoginPageState extends State<LoginPage> {
                     child: Text(_create ? 'Create account' : 'Sign in'),
                   ),
                 ),
+                if (!_create)
+                  TextButton(
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Forgot your password?'),
+                        content: const Text(
+                            'Contact the Head of Education at utbildning@mdsu.se or on Teams. '
+                            'They will give you a temporary password. After you sign in, change it under '
+                            'More → My profile → Change my password.'),
+                        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+                      ),
+                    ),
+                    child: const Text('Forgot password?'),
+                  ),
                 if (_create)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
