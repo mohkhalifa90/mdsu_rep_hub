@@ -107,8 +107,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: build/windows/x64/runner/Release }
 
+  # Mac and iPhone builds use macOS machines, which eat GitHub's free minutes about 10x faster.
+  # They only run when started by hand: Actions → Build MDSU Rep Hub → Run workflow.
   macos:
     needs: check
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,6 +125,7 @@ jobs:
 
   ios:
     needs: check
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
