@@ -236,6 +236,28 @@ select from pg_temp.as_user('Omar Haddad');
 insert into t select '11 hidden tutoring post invisible to others', (select count(*) from public.tutoring_posts) = 0;
 insert into t select '11b directory shows Lina (shared)', exists (select 1 from public.rep_directory where full_name='Lina Berg');
 
+-- 12. Attendance
+select from pg_temp.as_user('Ahmed Saleh');
+select from public.set_attendance((select id from public.meetings where title='CS #3'), 'online');
+do $$ begin
+  perform public.set_attendance((select id from public.meetings where title='Nursing #2'), 'online');
+  insert into t values ('12 no attendance answer outside own council', false);
+exception when others then insert into t values ('12 no attendance answer outside own council', true); end $$;
+select from pg_temp.as_user('Lina Berg');
+select from public.set_attendance((select id from public.meetings where title='CS #3'), 'absent');
+select from public.set_attendance((select id from public.meetings where title='CS #3'), 'offline');
+insert into t select '12b rep sees only own answer (changed to offline)',
+  (select count(*) from public.meeting_attendance) = 1 and (select mode from public.meeting_attendance) = 'offline';
+do $$ begin
+  insert into public.meeting_attendance (meeting_id, user_id, mode)
+  select id, '00000000-0000-0000-0000-000000000003', 'absent' from public.meetings where title='CS #1';
+  insert into t values ('12c rep cannot answer for someone else', false);
+exception when others then insert into t values ('12c rep cannot answer for someone else', true); end $$;
+select from pg_temp.as_user('Head of Education');
+insert into t select '12d officer sees 1 offline + 1 online',
+  (select count(*) filter (where mode='offline') = 1 and count(*) filter (where mode='online') = 1
+     from public.meeting_attendance where meeting_id = (select id from public.meetings where title='CS #3'));
+
 reset role;
 \echo
 select case when passed then 'PASS' else 'FAIL' end as result, name from t order by name;

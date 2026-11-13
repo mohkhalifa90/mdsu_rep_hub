@@ -6,6 +6,7 @@ import '../data/repo.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
 import 'agenda_docx.dart';
+import 'attendance_export.dart';
 import 'officer_shell.dart';
 
 /// Collects reps' agenda items per meeting + open follow-ups (auto carry-forward).
@@ -113,6 +114,19 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               child: Text('Reps send items from the app. Unanswered issues from earlier meetings are added '
                   'automatically, so nothing is forgotten.'),
             ),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final where = await exportAttendanceXlsx(semester: widget.data.semester, councils: widget.data.councils);
+                  if (where != null && context.mounted) showSnack(context, 'Saved: $where');
+                } catch (e) {
+                  if (context.mounted) showSnack(context, errorText(e));
+                }
+              },
+              icon: const Icon(Icons.how_to_reg_outlined),
+              label: const Text('Attendance (Excel)'),
+            ),
+            const SizedBox(width: 8),
             FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
           ]),
           const SizedBox(height: 12),
@@ -148,9 +162,48 @@ class _MeetingAgenda extends StatefulWidget {
 }
 
 class _MeetingAgendaState extends State<_MeetingAgenda> {
-  late Future<(List<OpenIssue>, List<AgendaItem>)> _f = _load();
-  Future<(List<OpenIssue>, List<AgendaItem>)> _load() async =>
-      (await Repo.openIssuesForMeeting(widget.meeting.id), await Repo.agendaItems(meetingId: widget.meeting.id));
+  late Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)> _f = _load();
+  Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)> _load() async => (
+        await Repo.openIssuesForMeeting(widget.meeting.id),
+        await Repo.agendaItems(meetingId: widget.meeting.id),
+        await Repo.attendance(meetingId: widget.meeting.id),
+        await Repo.councilMemberIds(widget.meeting.councilId),
+      );
+
+  Widget _attendance(List<Attendance> answers, Set<String> members) {
+    final byMode = <String, List<String>>{'offline': [], 'online': [], 'absent': []};
+    for (final a in answers) {
+      byMode[a.mode]?.add(widget.names[a.userId] ?? '?');
+    }
+    final answered = answers.map((a) => a.userId).toSet();
+    final missing = [for (final id in members) if (!answered.contains(id)) widget.names[id] ?? '?'];
+    for (final l in [...byMode.values, missing]) {
+      l.sort();
+    }
+    Widget group(String label, IconData icon, Color color, List<String> people) => Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text('$label (${people.length})', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+            ]),
+            const SizedBox(height: 4),
+            if (people.isEmpty) const Text('–'),
+            for (final n in people) Text(n),
+          ]),
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          group('In the room', Icons.meeting_room_outlined, Colors.green.shade700, byMode['offline']!),
+          group('Online', Icons.videocam_outlined, Colors.blue.shade700, byMode['online']!),
+          group('Can\'t attend', Icons.event_busy_outlined, Colors.red.shade700, byMode['absent']!),
+          group('No answer', Icons.help_outline, Colors.grey.shade700, missing),
+        ]),
+      ),
+    );
+  }
 
   String _agendaText(List<OpenIssue> fol, List<AgendaItem> items) {
     final m = widget.meeting;
@@ -180,11 +233,11 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
   @override
   Widget build(BuildContext context) {
     final m = widget.meeting;
-    return Loader<(List<OpenIssue>, List<AgendaItem>)>(
+    return Loader<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)>(
       future: _f,
       onRetry: () => setState(() => _f = _load()),
       builder: (context, data) {
-        final (fol, items) = data;
+        final (fol, items, answers, members) = data;
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Card(
             child: ListTile(
@@ -255,6 +308,10 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
               ]),
             ),
           ),
+          SectionTitle('Attendance',
+              trailing: IconButton(
+                  tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => setState(() => _f = _load()))),
+          _attendance(answers, members),
           const SectionTitle('1 · Follow-up from previous meetings (added automatically)'),
           if (fol.isEmpty) const EmptyState('No open follow-ups for this council'),
           for (final i in fol)

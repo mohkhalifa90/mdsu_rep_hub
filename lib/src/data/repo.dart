@@ -140,6 +140,29 @@ class Repo {
   static Future<int> requestAgendaInput(String meetingId) async =>
       ((await sb.rpc('request_agenda_input', params: {'p_meeting': meetingId})) as num).toInt();
 
+  /// Active representatives of a council (SIEC = all representatives).
+  static Future<Set<String>> councilMemberIds(String councilId) async {
+    final rows = await sb.rpc('council_member_ids', params: {'p_council': councilId}) as List;
+    return {for (final r in rows) r is Map ? r.values.first as String : r as String};
+  }
+
+  // ---------- attendance ----------
+  /// The signed-in rep's answers: meeting id → mode
+  static Future<Map<String, String>> myAttendance() async {
+    final rows = await sb.from('meeting_attendance').select('meeting_id, mode').eq('user_id', uid);
+    return {for (final r in rows as List) r['meeting_id'] as String: r['mode'] as String};
+  }
+
+  static Future<void> setAttendance(String meetingId, String? mode) =>
+      sb.rpc('set_attendance', params: {'p_meeting': meetingId, 'p_mode': mode});
+
+  /// Officer: all answers (optionally for one meeting)
+  static Future<List<Attendance>> attendance({String? meetingId}) async {
+    var q = sb.from('meeting_attendance').select();
+    if (meetingId != null) q = q.eq('meeting_id', meetingId);
+    return _list(await q, Attendance.fromMap);
+  }
+
   // ---------- time entries & reports ----------
   static Future<List<TimeEntry>> entries({required String userId, required String semesterId}) async => _list(
       await sb

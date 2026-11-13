@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/format.dart';
+import '../shared/attendance_picker.dart';
 import '../shared/widgets.dart';
 import 'rep_shell.dart';
 
-/// Reps send agenda topics before each meeting; the officer gets them combined.
+/// Reps send agenda topics before each meeting and say how they attend.
 class RepAgendaPage extends StatefulWidget {
   final RepData data;
   final String? openMeetingId;
@@ -16,7 +17,7 @@ class RepAgendaPage extends StatefulWidget {
 }
 
 class _RepAgendaPageState extends State<RepAgendaPage> {
-  late Future<(List<Meeting>, List<AgendaItem>)> _f = _load();
+  late Future<_AgendaData> _f = _load();
   String? _open;
 
   @override
@@ -25,42 +26,56 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
     _open = widget.openMeetingId;
   }
 
-  Future<(List<Meeting>, List<AgendaItem>)> _load() async =>
-      ((await Repo.meetings()).where((m) => !m.isPast).toList(), await Repo.agendaItems());
+  Future<_AgendaData> _load() async {
+    final all = await Repo.meetings();
+    return _AgendaData(
+      all.where((m) => !m.isPast).toList(),
+      await Repo.agendaItems(),
+      await Repo.myAttendance(),
+    );
+  }
+
+  void _reload() => setState(() => _f = _load());
 
   @override
   Widget build(BuildContext context) {
-    return Loader<(List<Meeting>, List<AgendaItem>)>(
+    return Loader<_AgendaData>(
       future: _f,
-      onRetry: () => setState(() => _f = _load()),
-      builder: (context, data) {
-        final (meetings, items) = data;
-        final open = meetings.where((m) => m.id == _open).toList();
+      onRetry: _reload,
+      builder: (context, d) {
+        final open = d.upcoming.where((m) => m.id == _open).toList();
         if (open.isNotEmpty) {
           return _MeetingInput(
             meeting: open.first,
             data: widget.data,
-            myItems: items.where((a) => a.meetingId == open.first.id).toList(),
+            myItems: d.items.where((a) => a.meetingId == open.first.id).toList(),
+            attendance: d.attendance[open.first.id],
             onBack: () => setState(() => _open = null),
-            onChanged: () => setState(() => _f = _load()),
+            onChanged: _reload,
           );
         }
-        if (meetings.isEmpty) return const EmptyState('No upcoming meetings in your councils');
+        if (d.upcoming.isEmpty) return const EmptyState('No upcoming meetings in your councils');
         return ListView(padding: const EdgeInsets.all(16), children: [
-          Text('Send topics before each meeting. Ask your classmates as early as you can.',
+          Text('Send topics before each meeting and say how you will attend. Ask your classmates as early as you can.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
-          for (final m in meetings)
+          for (final m in d.upcoming)
             Card(
               child: ListTile(
                 title: Text(m.title),
                 subtitle: Text('${fmtDateTime(m.startsAt)} · send by ${fmtDate(m.inputDeadline)}\n'
                     '${widget.data.council(m.councilId)?.name ?? ''}'),
                 isThreeLine: true,
-                trailing: Builder(builder: (_) {
-                  final n = items.where((a) => a.meetingId == m.id).length;
-                  return n > 0 ? StatusChip('$n sent', Colors.green.shade700) : StatusChip('Add input', Colors.orange.shade800);
-                }),
+                trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Builder(builder: (_) {
+                    final n = d.items.where((a) => a.meetingId == m.id).length;
+                    return n > 0 ? StatusChip('$n sent', Colors.green.shade700) : StatusChip('Add input', Colors.orange.shade800);
+                  }),
+                  const SizedBox(height: 4),
+                  d.attendance[m.id] == null
+                      ? StatusChip('Attending?', Colors.orange.shade800)
+                      : StatusChip(attendanceLabels[d.attendance[m.id]] ?? '', Colors.blueGrey),
+                ]),
                 onTap: () => setState(() => _open = m.id),
               ),
             ),
@@ -70,14 +85,27 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
   }
 }
 
+class _AgendaData {
+  final List<Meeting> upcoming;
+  final List<AgendaItem> items;
+  final Map<String, String> attendance;
+  _AgendaData(this.upcoming, this.items, this.attendance);
+}
+
 class _MeetingInput extends StatefulWidget {
   final Meeting meeting;
   final RepData data;
   final List<AgendaItem> myItems;
+  final String? attendance;
   final VoidCallback onBack;
   final VoidCallback onChanged;
   const _MeetingInput(
-      {required this.meeting, required this.data, required this.myItems, required this.onBack, required this.onChanged});
+      {required this.meeting,
+      required this.data,
+      required this.myItems,
+      required this.attendance,
+      required this.onBack,
+      required this.onChanged});
   @override
   State<_MeetingInput> createState() => _MeetingInputState();
 }
@@ -88,6 +116,19 @@ class _MeetingInputState extends State<_MeetingInput> {
   final _count = TextEditingController(text: '5');
   String _source = agendaSources.first;
   late final Future<List<OpenIssue>> _issues = Repo.openIssuesForMeeting(widget.meeting.id);
+  late String? _attendance = widget.attendance;
+
+  Future<void> _setAttendance(String? mode) async {
+    final before = _attendance;
+    setState(() => _attendance = mode);
+    final ok = await runAction(context, () => Repo.setAttendance(widget.meeting.id, mode),
+        success: mode == null ? null : 'Saved: ${attendanceLabels[mode]}');
+    if (!ok && mounted) {
+      setState(() => _attendance = before);
+    } else {
+      widget.onChanged();
+    }
+  }
 
   Future<void> _send() async {
     if (_title.text.trim().isEmpty) return showSnack(context, 'Write a topic first');
@@ -119,6 +160,9 @@ class _MeetingInputState extends State<_MeetingInput> {
       ),
       Text(m.title, style: Theme.of(context).textTheme.titleLarge),
       Text('${fmtDateTime(m.startsAt)} · input closes ${fmtDate(m.inputDeadline)}'),
+      if (m.location != null && m.location!.isNotEmpty) Text(m.location!),
+      const SectionTitle('How will you attend?'),
+      AttendancePicker(value: _attendance, onChanged: _setAttendance),
       FutureBuilder<List<OpenIssue>>(
         future: _issues,
         builder: (context, s) {

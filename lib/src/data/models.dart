@@ -107,6 +107,19 @@ class Meeting {
   DateTime get inputDeadline => _inputDeadline ?? startsAt.subtract(const Duration(days: 2));
 }
 
+/// How a representative attends a meeting.
+class Attendance {
+  final String meetingId;
+  final String userId;
+  final String mode; // offline | online | absent
+  Attendance.fromMap(Map<String, dynamic> m)
+      : meetingId = m['meeting_id'] as String,
+        userId = m['user_id'] as String,
+        mode = m['mode'] as String;
+}
+
+const attendanceLabels = {'offline': 'In the room', 'online': 'Online (Teams)', 'absent': 'Can\'t attend'};
+
 class TimeEntry {
   final String id;
   final String userId;
