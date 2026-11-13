@@ -119,6 +119,14 @@ flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SU
 
 ---
 
+### 7) نسخة الويب للآيفون (Netlify، أوتوماتيك)
+1. اعمل حساب على [netlify.com](https://www.netlify.com) ← **Add new project** ← **Deploy manually**، واسحب فولدر `web` اللي نزّلته من Actions.
+2. **Project configuration** ← **Change project name** ← `mdsu-rep-hub`، وانسخ **Project ID**.
+3. **User settings** ← **Applications** ← **Personal access tokens** ← **New access token**.
+4. في GitHub ضيف secrets: `NETLIFY_SITE_ID` (الـ Project ID) و`NETLIFY_AUTH_TOKEN` (الـ token).
+5. بعد كده كل Push على main بيرفع الويب لوحده على `https://mdsu-rep-hub.netlify.app`.
+   على الآيفون: Safari ← Share ← **Add to Home Screen**.
+
 ## قواعد العمل (موجودة في قاعدة البيانات)
 | القاعدة | التنفيذ |
 |---|---|

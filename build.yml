@@ -1,0 +1,145 @@
+name: Build MDSU Rep Hub
+
+# Runs on every push. Repository secrets (Settings → Secrets → Actions):
+#   SUPABASE_URL        e.g. https://abcd1234.supabase.co
+#   SUPABASE_ANON_KEY   the "anon public" key from Supabase → Project settings → API
+# Optional, for phone notifications (see README):
+#   FIREBASE_API_KEY, FIREBASE_PROJECT_ID, FIREBASE_SENDER_ID,
+#   FIREBASE_ANDROID_APP_ID, FIREBASE_IOS_APP_ID, FIREBASE_IOS_BUNDLE_ID
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  DEFINES: >-
+    --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+    --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+    --dart-define=FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}
+    --dart-define=FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+    --dart-define=FIREBASE_SENDER_ID=${{ secrets.FIREBASE_SENDER_ID }}
+    --dart-define=FIREBASE_ANDROID_APP_ID=${{ secrets.FIREBASE_ANDROID_APP_ID }}
+    --dart-define=FIREBASE_IOS_APP_ID=${{ secrets.FIREBASE_IOS_APP_ID }}
+    --dart-define=FIREBASE_IOS_BUNDLE_ID=${{ secrets.FIREBASE_IOS_BUNDLE_ID }}
+
+jobs:
+  database:
+    name: Database tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migration + seed + workflow tests
+        env: { PGPASSWORD: postgres }
+        run: |
+          P="psql -h localhost -U postgres -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/stub_supabase.sql
+          for f in supabase/migrations/*.sql; do $P -f "$f"; done
+          $P -f supabase/seed.sql
+          $P -f supabase/tests/workflow_test.sql | tee result.txt
+          grep -q "^ *0 | " result.txt
+
+  push-function:
+    name: Push function tests (Deno)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.x }
+      - run: deno check supabase/functions/send-push/index.ts
+      - run: deno test --allow-net --allow-env supabase/functions/send-push/index.test.ts
+      - run: deno check supabase/functions/admin-reset-password/index.ts
+      - run: deno test --allow-net --allow-env supabase/functions/admin-reset-password/index.test.ts
+
+  check:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter test
+
+  android:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+      - run: flutter build apk --release $DEFINES
+      - uses: actions/upload-artifact@v4
+        with: { name: android-apk, path: build/app/outputs/flutter-apk/app-release.apk }
+
+  # Web version (for iPhones). Published to Netlify on every push to main
+  # when the secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID are set (see README).
+  web:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+      - run: flutter build web --release $DEFINES
+      - run: cp tool/netlify/_redirects tool/netlify/_headers build/web/
+      - uses: actions/upload-artifact@v4
+        with: { name: web, path: build/web }
+      - name: Publish to Netlify
+        if: github.ref == 'refs/heads/main' && env.NETLIFY_SITE_ID != ''
+        run: npx --yes netlify-cli deploy --dir=build/web --prod --message "Build ${{ github.run_number }}"
+
+  windows:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+        shell: bash
+      - run: flutter build windows --release ${{ env.DEFINES }}
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: build/windows/x64/runner/Release }
+
+  # Mac and iPhone builds use macOS machines, which eat GitHub's free minutes about 10x faster.
+  # They only run when started by hand: Actions → Build MDSU Rep Hub → Run workflow.
+  macos:
+    needs: check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+      - run: flutter build macos --release $DEFINES
+      - run: cd build/macos/Build/Products/Release && zip -qr ../../../../../mdsu_rep_hub_macos.zip mdsu_rep_hub.app
+      - uses: actions/upload-artifact@v4
+        with: { name: macos, path: mdsu_rep_hub_macos.zip }
+
+  ios:
+    needs: check
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: bash tool/setup_platforms.sh
+      # Unsigned build to prove it compiles. Signing for the App Store needs an Apple Developer account.
+      - run: flutter build ios --release --no-codesign $DEFINES
