@@ -14,3 +14,8 @@ build/
 /linux/
 /web/
 pubspec.lock
+
+# Android signing key (only in GitHub secrets, never in the repo)
+android/key.properties
+*.jks
+*.keystore
