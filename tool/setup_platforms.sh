@@ -33,6 +33,54 @@ GRADLE_EOF
   fi
 done
 
+# Android: sign release builds with MDSU's own fixed key when android/key.properties exists
+# (written by the GitHub workflow from secrets). Without a fixed key every build gets a new
+# signature and phones refuse to install an update over the old app.
+APP_KTS=android/app/build.gradle.kts
+APP_GROOVY=android/app/build.gradle
+if [ -f "$APP_KTS" ] && ! grep -q 'mdsuRelease' "$APP_KTS"; then
+  cat >> "$APP_KTS" <<'KTS_EOF'
+
+// Added by tool/setup_platforms.sh – fixed release signing key (android/key.properties)
+val mdsuKeyFile = rootProject.file("key.properties")
+if (mdsuKeyFile.exists()) {
+    val mdsuKey = java.util.Properties().apply { mdsuKeyFile.inputStream().use { load(it) } }
+    android {
+        signingConfigs {
+            create("mdsuRelease") {
+                storeFile = file(mdsuKey.getProperty("storeFile"))
+                storePassword = mdsuKey.getProperty("storePassword")
+                keyAlias = mdsuKey.getProperty("keyAlias")
+                keyPassword = mdsuKey.getProperty("keyPassword")
+            }
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("mdsuRelease")
+    }
+}
+KTS_EOF
+elif [ -f "$APP_GROOVY" ] && ! grep -q 'mdsuRelease' "$APP_GROOVY"; then
+  cat >> "$APP_GROOVY" <<'GROOVY_EOF'
+
+// Added by tool/setup_platforms.sh – fixed release signing key (android/key.properties)
+def mdsuKeyFile = rootProject.file("key.properties")
+if (mdsuKeyFile.exists()) {
+    def mdsuKey = new Properties()
+    mdsuKeyFile.withInputStream { mdsuKey.load(it) }
+    android {
+        signingConfigs {
+            mdsuRelease {
+                storeFile file(mdsuKey.getProperty("storeFile"))
+                storePassword mdsuKey.getProperty("storePassword")
+                keyAlias mdsuKey.getProperty("keyAlias")
+                keyPassword mdsuKey.getProperty("keyPassword")
+            }
+        }
+        buildTypes.release.signingConfig signingConfigs.mdsuRelease
+    }
+}
+GROOVY_EOF
+fi
+
 # macOS: sandboxed apps need permission to reach the network and open user-selected files
 for f in macos/Runner/DebugProfile.entitlements macos/Runner/Release.entitlements; do
   [ -f "$f" ] || continue
@@ -59,6 +107,14 @@ fi
 PLIST=ios/Runner/Info.plist
 if [ -f "$PLIST" ] && ! grep -q 'UIBackgroundModes' "$PLIST"; then
   perl -0pi -e 's#<dict>#<dict>\n\t<key>UIBackgroundModes</key>\n\t<array>\n\t\t<string>remote-notification</string>\n\t</array>#' "$PLIST"
+fi
+
+# Web (iPhone "Add to Home Screen"): app name and description
+if [ -f web/index.html ]; then
+  perl -pi -e 's#<title>.*?</title>#<title>MDSU Rep Hub</title>#; s#(name="apple-mobile-web-app-title" content=)"[^"]*"#$1"MDSU Reps"#; s#(name="description" content=)"[^"]*"#$1"MDSU Rep Hub – Mälardalen Student Union"#' web/index.html
+fi
+if [ -f web/manifest.json ]; then
+  perl -pi -e 's#"name": "[^"]*"#"name": "MDSU Rep Hub"#; s#"short_name": "[^"]*"#"short_name": "MDSU Reps"#; s#"description": "[^"]*"#"description": "MDSU Rep Hub – Mälardalen Student Union"#' web/manifest.json
 fi
 
 # App icon from the MDSU logo (assets/app_icon.png)
