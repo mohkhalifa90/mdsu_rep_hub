@@ -44,14 +44,17 @@ if [ -f "$APP_KTS" ] && ! grep -q 'mdsuRelease' "$APP_KTS"; then
 // Added by tool/setup_platforms.sh – fixed release signing key (android/key.properties)
 val mdsuKeyFile = rootProject.file("key.properties")
 if (mdsuKeyFile.exists()) {
-    val mdsuKey = java.util.Properties().apply { mdsuKeyFile.inputStream().use { load(it) } }
+    // key=value lines (simple parser: no imports needed in this appended block)
+    val mdsuKey: Map<String, String> = mdsuKeyFile.readLines()
+        .filter { it.contains("=") }
+        .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
     android {
         signingConfigs {
             create("mdsuRelease") {
-                storeFile = file(mdsuKey.getProperty("storeFile"))
-                storePassword = mdsuKey.getProperty("storePassword")
-                keyAlias = mdsuKey.getProperty("keyAlias")
-                keyPassword = mdsuKey.getProperty("keyPassword")
+                storeFile = file(mdsuKey.getValue("storeFile"))
+                storePassword = mdsuKey.getValue("storePassword")
+                keyAlias = mdsuKey.getValue("keyAlias")
+                keyPassword = mdsuKey.getValue("keyPassword")
             }
         }
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("mdsuRelease")
