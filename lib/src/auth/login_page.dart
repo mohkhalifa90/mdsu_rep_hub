@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/repo.dart';
 import '../shared/widgets.dart';
@@ -96,7 +97,12 @@ class _LoginPageState extends State<LoginPage> {
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
-                  decoration: const InputDecoration(labelText: 'Student email', hintText: 'name@student.mdu.se'),
+                  autocorrect: false,
+                  decoration: InputDecoration(
+                    labelText: 'Student email',
+                    hintText: 'name@student.mdu.se',
+                    suffixIcon: pasteButton(_email),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -105,10 +111,14 @@ class _LoginPageState extends State<LoginPage> {
                   autofillHints: [_create ? AutofillHints.newPassword : AutofillHints.password],
                   decoration: InputDecoration(
                     labelText: 'Password (at least 8 characters)',
-                    suffixIcon: IconButton(
-                      icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                      onPressed: () => setState(() => _hide = !_hide),
-                    ),
+                    suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (pasteButton(_password) case final paste?) paste,
+                      IconButton(
+                        tooltip: _hide ? 'Show password' : 'Hide password',
+                        icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _hide = !_hide),
+                      ),
+                    ]),
                   ),
                   onSubmitted: (_) => _create ? null : _submit(),
                 ),
@@ -117,7 +127,7 @@ class _LoginPageState extends State<LoginPage> {
                   TextField(
                     controller: _password2,
                     obscureText: _hide,
-                    decoration: const InputDecoration(labelText: 'Repeat password'),
+                    decoration: InputDecoration(labelText: 'Repeat password', suffixIcon: pasteButton(_password2)),
                     onSubmitted: (_) => _submit(),
                   ),
                 ],
@@ -161,4 +171,26 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+}
+
+
+/// Web version (iPhone Safari): long-press "Paste" does not always appear in Flutter text
+/// fields, so the web version shows a paste button. Returns null in the phone/desktop apps.
+Widget? pasteButton(TextEditingController controller) {
+  if (!kIsWeb) return null;
+  return IconButton(
+    tooltip: 'Paste',
+    icon: const Icon(Icons.content_paste, size: 20),
+    onPressed: () async {
+      try {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final text = data?.text?.trim();
+        if (text == null || text.isEmpty) return;
+        controller.text = text;
+        controller.selection = TextSelection.collapsed(offset: text.length);
+      } catch (_) {
+        // The browser refused clipboard access; nothing to do.
+      }
+    },
+  );
 }
