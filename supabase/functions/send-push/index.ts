@@ -113,7 +113,9 @@ export function fcmMessage(token: string, n: NotificationRow, unread = 1) {
       android: {
         priority: "HIGH",
         collapse_key: key,
-        notification: { sound: "default", notification_count: badge, tag: key },
+        // Each notification counts as 1: Samsung adds up the counts of all shown
+        // notifications, so sending the running total would show 1+2+3 = 6.
+        notification: { sound: "default", notification_count: 1, tag: key },
       },
       apns: { headers: { "apns-collapse-id": key }, payload: { aps: { sound: "default", badge } } },
       webpush: {

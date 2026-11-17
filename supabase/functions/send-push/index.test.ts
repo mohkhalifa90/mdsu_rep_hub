@@ -66,7 +66,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     assertEquals(body.message.notification.title, "Time report approved");
     assertEquals(body.message.data.link, "hours");
     assertEquals(body.message.data.badge, "3");                         // red number on the app icon
-    assertEquals(body.message.android.notification.notification_count, 3);
+    assertEquals(body.message.android.notification.notification_count, 1); // Samsung adds them up
     assertEquals(body.message.webpush.fcm_options.link, "https://mdsu-rep-hub.pages.dev");
     assertEquals(body.message.android.collapse_key, "n1");             // never replaces an earlier one
     assertEquals(body.message.webpush.notification.tag, "n1");
