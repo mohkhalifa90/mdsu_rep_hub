@@ -84,36 +84,6 @@ if (mdsuKeyFile.exists()) {
 GROOVY_EOF
 fi
 
-# Android: lets the app clear its notifications from the pull-down list once they are read in the
-# app (that also removes the number on the app icon). Replaces the generated MainActivity.
-MAIN_ACTIVITY=android/app/src/main/kotlin/se/mdsu/mdsu_rep_hub/MainActivity.kt
-if [ -d "$(dirname "$MAIN_ACTIVITY")" ]; then
-  cat > "$MAIN_ACTIVITY" <<'KOTLIN_EOF'
-package se.mdsu.mdsu_rep_hub
-
-import android.app.NotificationManager
-import android.content.Context
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
-
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mdsu/notifications")
-            .setMethodCallHandler { call, result ->
-                if (call.method == "clearAll") {
-                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancelAll()
-                    result.success(null)
-                } else {
-                    result.notImplemented()
-                }
-            }
-    }
-}
-KOTLIN_EOF
-fi
-
 # macOS: sandboxed apps need permission to reach the network and open user-selected files
 for f in macos/Runner/DebugProfile.entitlements macos/Runner/Release.entitlements; do
   [ -f "$f" ] || continue
