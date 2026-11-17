@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../push/app_badge_stub.dart' if (dart.library.js_interop) '../push/app_badge_web.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'format.dart';
@@ -420,12 +421,18 @@ class NotificationBell extends StatefulWidget {
 
 class _NotificationBellState extends State<NotificationBell> {
   Stream<List<AppNotification>> _stream = Repo.notificationStream();
+  int? _shownBadge;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppNotification>>(
         stream: _stream,
         builder: (context, snap) {
           final unread = (snap.data ?? const <AppNotification>[]).where((n) => n.readAt == null).length;
+          // Red number on the app icon (web version on iPhone; phones get it with each notification)
+          if (snap.hasData && unread != _shownBadge) {
+            _shownBadge = unread;
+            setAppBadge(unread);
+          }
           return IconButton(
             tooltip: 'Notifications',
             onPressed: () async {
