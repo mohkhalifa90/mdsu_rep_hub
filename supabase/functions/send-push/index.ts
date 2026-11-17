@@ -101,16 +101,28 @@ const webAppUrl = () => (Deno.env.get("WEB_APP_URL") || "https://mdsu-rep-hub.pa
 
 export function fcmMessage(token: string, n: NotificationRow, unread = 1) {
   const badge = Math.max(1, unread);
+  // Each notification gets its own key/tag. Without this, FCM treats notifications as
+  // "collapsible": while a phone sleeps it keeps only the newest one, and the phone
+  // replaces the previous notification instead of showing both.
+  const key = n.id.replace(/-/g, "").slice(0, 32);
   return {
     message: {
       token,
       notification: { title: n.title, body: n.body || undefined },
       data: { link: n.link ?? "", notification_id: n.id, badge: String(badge) },
-      android: { priority: "HIGH", notification: { sound: "default", notification_count: badge } },
-      apns: { payload: { aps: { sound: "default", badge } } },
+      android: {
+        priority: "HIGH",
+        collapse_key: key,
+        notification: { sound: "default", notification_count: badge, tag: key },
+      },
+      apns: { headers: { "apns-collapse-id": key }, payload: { aps: { sound: "default", badge } } },
       webpush: {
-        headers: { Urgency: "high" },
-        notification: { icon: `${webAppUrl()}/icons/Icon-192.png`, badge: `${webAppUrl()}/icons/Icon-192.png` },
+        headers: { Urgency: "high", Topic: key },
+        notification: {
+          icon: `${webAppUrl()}/icons/Icon-192.png`,
+          badge: `${webAppUrl()}/icons/Icon-192.png`,
+          tag: key,
+        },
         fcm_options: { link: webAppUrl() },
       },
     },
@@ -163,6 +175,7 @@ Deno.serve(async (req) => {
   const unread = await unreadCount(n.user_id);
   let sent = 0;
   const stale: string[] = [];
+  const errors: string[] = [];
 
   for (const { token } of devices as { token: string }[]) {
     const res = await fetch(
@@ -180,15 +193,19 @@ Deno.serve(async (req) => {
       sent++;
     } else {
       const text = await res.text();
-      // Phone uninstalled the app or the token expired → forget it
-      if (res.status === 404 || text.includes("UNREGISTERED") || text.includes("INVALID_ARGUMENT")) {
+      // Forget a token only when FCM says the token itself is dead – never because the
+      // message was rejected for another reason (that would silently unregister every phone).
+      const deadToken = res.status === 404 || text.includes("UNREGISTERED") ||
+        (res.status === 400 && /registration token/i.test(text));
+      if (deadToken) {
         stale.push(token);
       } else {
         console.error("FCM error", res.status, text);
+        errors.push(`${res.status}: ${text.slice(0, 300)}`);
       }
     }
   }
 
   if (stale.length) await supabase.from("device_tokens").delete().in("token", stale);
-  return Response.json({ sent, removed: stale.length });
+  return Response.json(errors.length ? { sent, removed: stale.length, errors } : { sent, removed: stale.length });
 });

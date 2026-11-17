@@ -41,6 +41,10 @@ class PushService {
 
   bool _initialized = false;
   String? _token;
+
+  /// Goes up by one each time a push notification arrives while the app is open,
+  /// so the bell can read the list again.
+  final ValueNotifier<int> received = ValueNotifier(0);
   void Function(String link)? onOpenLink;
 
   bool get _isPhone =>
@@ -82,6 +86,8 @@ class PushService {
       _initialized = true;
       // Tapping a notification while the app was in the background
       FirebaseMessaging.onMessageOpenedApp.listen((m) => _open(m.data['link']));
+      // A notification arrived while the app is open
+      FirebaseMessaging.onMessage.listen((_) => received.value++);
     } catch (e) {
       debugPrint('Push disabled: $e');
     }

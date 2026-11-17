@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../push/app_badge_stub.dart' if (dart.library.js_interop) '../push/app_badge_web.dart';
+import '../push/push_service.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'format.dart';
@@ -419,9 +420,35 @@ class NotificationBell extends StatefulWidget {
   State<NotificationBell> createState() => _NotificationBellState();
 }
 
-class _NotificationBellState extends State<NotificationBell> {
+class _NotificationBellState extends State<NotificationBell> with WidgetsBindingObserver {
   Stream<List<AppNotification>> _stream = Repo.notificationStream();
   int? _shownBadge;
+
+  // The live connection can drop while the phone is locked or the app is in the background
+  // (especially the iPhone web app). Read the list again when the app comes back and when a
+  // push notification arrives while the app is open.
+  void _refresh() {
+    if (mounted) setState(() => _stream = Repo.notificationStream());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    PushService.instance.received.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PushService.instance.received.removeListener(_refresh);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh();
+  }
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<AppNotification>>(
@@ -440,7 +467,7 @@ class _NotificationBellState extends State<NotificationBell> {
                   context, MaterialPageRoute(builder: (_) => NotificationsPage(onOpen: widget.onOpen)));
               await Repo.markAllNotificationsRead().catchError((_) {});
               // read the list again so the counter is up to date
-              if (mounted) setState(() => _stream = Repo.notificationStream());
+              _refresh();
             },
             icon: Badge(
               isLabelVisible: unread > 0,
