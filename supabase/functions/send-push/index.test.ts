@@ -25,6 +25,10 @@ let tokens = [
 ];
 const db = Deno.serve({ port: 54399, onListen() {} }, (req) => {
   const url = new URL(req.url);
+  if (url.pathname.endsWith("/notifications")) {
+    // unread count (HEAD with Prefer: count=exact)
+    return new Response(null, { status: 200, headers: { "Content-Range": "*/3" } });
+  }
   if (!url.pathname.endsWith("/device_tokens")) return new Response("not found", { status: 404 });
   if (req.method === "GET") {
     const user = url.searchParams.get("user_id")!.replace("eq.", "");
@@ -61,6 +65,9 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     sentTo.push(body.message.token);
     assertEquals(body.message.notification.title, "Time report approved");
     assertEquals(body.message.data.link, "hours");
+    assertEquals(body.message.data.badge, "3");                         // red number on the app icon
+    assertEquals(body.message.android.notification.notification_count, 3);
+    assertEquals(body.message.webpush.fcm_options.link, "https://mdsu-rep-hub.pages.dev");
     return Response.json({ name: "projects/mdsu-test/messages/1" });
   }
   return realFetch(input, init);

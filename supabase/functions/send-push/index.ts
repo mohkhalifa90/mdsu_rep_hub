@@ -1,11 +1,15 @@
 // Supabase Edge Function: send-push
 // Called by a Database Webhook on INSERT into public.notifications.
 // Sends the notification to every phone the user is signed in on, through
-// Firebase Cloud Messaging (FCM HTTP v1) – Android and iPhone.
+// Firebase Cloud Messaging (FCM HTTP v1) – Android, iPhone and the web version
+// (iPhone "Add to Home Screen" app). Each message carries the number of unread
+// notifications, shown as the red number on the app icon.
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   FIREBASE_SERVICE_ACCOUNT  the whole JSON file from Firebase → Project settings → Service accounts
 //   WEBHOOK_SECRET            any long random text; the webhook sends it in the header x-webhook-secret
+//   WEB_APP_URL (optional)    the web version's address, opened when a web notification is tapped
+//                             (default https://mdsu-rep-hub.pages.dev)
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -93,16 +97,38 @@ export async function googleAccessToken(sa: ServiceAccount): Promise<string> {
 }
 
 // ---------- FCM message ----------
-export function fcmMessage(token: string, n: NotificationRow) {
+const webAppUrl = () => (Deno.env.get("WEB_APP_URL") || "https://mdsu-rep-hub.pages.dev").replace(/\/+$/, "");
+
+export function fcmMessage(token: string, n: NotificationRow, unread = 1) {
+  const badge = Math.max(1, unread);
   return {
     message: {
       token,
       notification: { title: n.title, body: n.body || undefined },
-      data: { link: n.link ?? "", notification_id: n.id },
-      android: { priority: "HIGH", notification: { sound: "default" } },
-      apns: { payload: { aps: { sound: "default" } } },
+      data: { link: n.link ?? "", notification_id: n.id, badge: String(badge) },
+      android: { priority: "HIGH", notification: { sound: "default", notification_count: badge } },
+      apns: { payload: { aps: { sound: "default", badge } } },
+      webpush: {
+        headers: { Urgency: "high" },
+        notification: { icon: `${webAppUrl()}/icons/Icon-192.png`, badge: `${webAppUrl()}/icons/Icon-192.png` },
+        fcm_options: { link: webAppUrl() },
+      },
     },
   };
+}
+
+/** Unread notifications of the user (this one included) – the number on the app icon. */
+async function unreadCount(userId: string): Promise<number> {
+  try {
+    const { count } = await supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("read_at", null);
+    return count ?? 1;
+  } catch {
+    return 1;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -134,6 +160,7 @@ Deno.serve(async (req) => {
   if (!devices?.length) return Response.json({ sent: 0 });
 
   const accessToken = await googleAccessToken(sa);
+  const unread = await unreadCount(n.user_id);
   let sent = 0;
   const stale: string[] = [];
 
@@ -146,7 +173,7 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(fcmMessage(token, n)),
+        body: JSON.stringify(fcmMessage(token, n, unread)),
       },
     );
     if (res.ok) {
