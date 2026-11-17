@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../push/push_service.dart';
+import '../push/web_push_card.dart';
 import '../shared/channels_page.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
@@ -233,6 +234,7 @@ class _RepHomePageState extends State<RepHomePage> {
                 label: const Padding(
                     padding: EdgeInsets.all(10), child: Text('Log time – meeting, task, material…')),
               ),
+            const WebPushCard(),
             if (todos.isNotEmpty) ...[const SectionTitle('To do'), ...todos],
             const SectionTitle('Upcoming meetings'),
             if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
