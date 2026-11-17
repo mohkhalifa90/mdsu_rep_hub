@@ -1,4 +1,0 @@
-# Always check for a new version, so phones get updates right away
-# (files that did not change still load from the cache).
-/*
-  Cache-Control: no-cache
