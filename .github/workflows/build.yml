@@ -150,11 +150,8 @@ jobs:
         if: github.ref == 'refs/heads/main' && env.CLOUDFLARE_API_TOKEN != ''
         run: npx --yes wrangler@latest pages deploy build/web --project-name=mdsu-rep-hub --branch=main --commit-dirty=true
 
-  # Windows counts double against GitHub's free minutes; build it only when started by hand
-  # (Actions → Build MDSU Rep Hub → Run workflow). The Head of Education can also use the web version.
   windows:
     needs: check
-    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
