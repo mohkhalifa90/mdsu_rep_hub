@@ -83,7 +83,12 @@ class _RepShellState extends State<RepShell> {
       builder: (context, d) {
         _data = d;
         final pages = [
-          RepHomePage(key: ValueKey('home$_refresh'), data: d, goTo: (i) => setState(() => _tab = i), onChanged: _reload),
+          RepHomePage(
+              key: ValueKey('home$_refresh'),
+              data: d,
+              goTo: (i) => setState(() => _tab = i),
+              openMeeting: (id) => _openLink('agenda/$id', d),
+              onChanged: _reload),
           HoursPage(key: ValueKey('hours$_refresh'), data: d),
           RepAgendaPage(key: ValueKey('agenda$_refresh'), data: d, openMeetingId: _openMeeting),
           ChannelsPage(me: d.me),
@@ -122,7 +127,7 @@ class _HomeData {
   final ReportRow? report;
   final List<Meeting> meetings;
   final Set<String> loggedMeetingIds;
-  final Set<String> agendaMeetingIds;
+  final Set<String> agendaMeetingIds; // meetings with my topics or my "no topics" answer
   final int unreadAnnouncements;
   _HomeData(this.report, this.meetings, this.loggedMeetingIds, this.agendaMeetingIds, this.unreadAnnouncements);
 }
@@ -130,8 +135,10 @@ class _HomeData {
 class RepHomePage extends StatefulWidget {
   final RepData data;
   final void Function(int tab) goTo;
+  final void Function(String meetingId) openMeeting;
   final VoidCallback onChanged;
-  const RepHomePage({super.key, required this.data, required this.goTo, required this.onChanged});
+  const RepHomePage(
+      {super.key, required this.data, required this.goTo, required this.openMeeting, required this.onChanged});
   @override
   State<RepHomePage> createState() => _RepHomePageState();
 }
@@ -148,7 +155,7 @@ class _RepHomePageState extends State<RepHomePage> {
       await Repo.myReport(),
       await Repo.meetings(),
       entries.map((e) => e.meetingId).whereType<String>().toSet(),
-      agenda.where((a) => a.userId == d.me.id).map((a) => a.meetingId).toSet(),
+      {...agenda.where((a) => a.userId == d.me.id).map((a) => a.meetingId), ...await Repo.myNoInput()},
       await Repo.unreadAnnouncements(),
     );
   }
@@ -187,7 +194,7 @@ class _RepHomePageState extends State<RepHomePage> {
           for (final m in h.meetings.where((m) =>
               !m.isPast && m.startsAt.difference(now).inDays <= 21 && !h.agendaMeetingIds.contains(m.id))) {
             todos.add(_todo(context, Icons.record_voice_over_outlined, 'Collect input for ${m.title}',
-                'Send items by ${fmtDate(m.inputDeadline)}', 'Add item', () => widget.goTo(2)));
+                'Send topics by ${fmtDate(m.inputDeadline)}', 'Open', () => widget.openMeeting(m.id)));
           }
           final upcoming = h.meetings.where((m) => !m.isPast).take(4).toList();
 
@@ -245,6 +252,8 @@ class _RepHomePageState extends State<RepHomePage> {
                   subtitle: Text('${fmtDateTime(m.startsAt)} · ${m.location ?? ''}\n'
                       '${d.council(m.councilId)?.name ?? ''}'),
                   isThreeLine: true,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => widget.openMeeting(m.id),
                 ),
               ),
           ]);

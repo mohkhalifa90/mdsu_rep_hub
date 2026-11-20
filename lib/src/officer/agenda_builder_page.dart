@@ -94,7 +94,7 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
     final name = title.text.trim().isEmpty ? (d.council(council)?.name ?? 'Meeting') : title.text.trim();
     if (await runAction(context,
         () => Repo.createMeeting(councilId: council, title: name, startsAt: startsAt, location: loc.text.trim()),
-        success: 'Meeting added')) {
+        success: 'Meeting added ✓ The representatives of this council were notified')) {
       _reload();
     }
   }
@@ -162,12 +162,13 @@ class _MeetingAgenda extends StatefulWidget {
 }
 
 class _MeetingAgendaState extends State<_MeetingAgenda> {
-  late Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)> _f = _load();
-  Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)> _load() async => (
+  late Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>, Set<String>)> _f = _load();
+  Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>, Set<String>)> _load() async => (
         await Repo.openIssuesForMeeting(widget.meeting.id),
         await Repo.agendaItems(meetingId: widget.meeting.id),
         await Repo.attendance(meetingId: widget.meeting.id),
         await Repo.councilMemberIds(widget.meeting.councilId),
+        await Repo.noInputFor(widget.meeting.id),
       );
 
   Widget _attendance(List<Attendance> answers, Set<String> members) {
@@ -233,11 +234,11 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
   @override
   Widget build(BuildContext context) {
     final m = widget.meeting;
-    return Loader<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>)>(
+    return Loader<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>, Set<String>)>(
       future: _f,
       onRetry: () => setState(() => _f = _load()),
       builder: (context, data) {
-        final (fol, items, answers, members) = data;
+        final (fol, items, answers, members, noInput) = data;
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Card(
             child: ListTile(
@@ -312,6 +313,14 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
               trailing: IconButton(
                   tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => setState(() => _f = _load()))),
           _attendance(answers, members),
+          if (noInput.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: Text(
+                'No topics this time: ${([for (final id in noInput) widget.names[id] ?? '?']..sort()).join(', ')}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           const SectionTitle('1 · Follow-up from previous meetings (added automatically)'),
           if (fol.isEmpty) const EmptyState('No open follow-ups for this council'),
           for (final i in fol)

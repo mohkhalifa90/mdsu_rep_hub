@@ -26,12 +26,22 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
     _open = widget.openMeetingId;
   }
 
+  @override
+  void didUpdateWidget(RepAgendaPage old) {
+    super.didUpdateWidget(old);
+    // opened from a notification or the Home page while this tab was already showing
+    if (widget.openMeetingId != null && widget.openMeetingId != old.openMeetingId) {
+      setState(() => _open = widget.openMeetingId);
+    }
+  }
+
   Future<_AgendaData> _load() async {
     final all = await Repo.meetings();
     return _AgendaData(
       all.where((m) => !m.isPast).toList(),
       await Repo.agendaItems(),
       await Repo.myAttendance(),
+      await Repo.myNoInput(),
     );
   }
 
@@ -50,6 +60,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
             data: widget.data,
             myItems: d.items.where((a) => a.meetingId == open.first.id).toList(),
             attendance: d.attendance[open.first.id],
+            noInput: d.noInput.contains(open.first.id),
             onBack: () => setState(() => _open = null),
             onChanged: _reload,
           );
@@ -69,7 +80,9 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
                 trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
                   Builder(builder: (_) {
                     final n = d.items.where((a) => a.meetingId == m.id).length;
-                    return n > 0 ? StatusChip('$n sent', Colors.green.shade700) : StatusChip('Add input', Colors.orange.shade800);
+                    if (n > 0) return StatusChip('$n sent', Colors.green.shade700);
+                    if (d.noInput.contains(m.id)) return StatusChip('No topics', Colors.blueGrey);
+                    return StatusChip('Topics?', Colors.orange.shade800);
                   }),
                   const SizedBox(height: 4),
                   d.attendance[m.id] == null
@@ -89,7 +102,8 @@ class _AgendaData {
   final List<Meeting> upcoming;
   final List<AgendaItem> items;
   final Map<String, String> attendance;
-  _AgendaData(this.upcoming, this.items, this.attendance);
+  final Set<String> noInput;
+  _AgendaData(this.upcoming, this.items, this.attendance, this.noInput);
 }
 
 class _MeetingInput extends StatefulWidget {
@@ -97,6 +111,7 @@ class _MeetingInput extends StatefulWidget {
   final RepData data;
   final List<AgendaItem> myItems;
   final String? attendance;
+  final bool noInput;
   final VoidCallback onBack;
   final VoidCallback onChanged;
   const _MeetingInput(
@@ -104,6 +119,7 @@ class _MeetingInput extends StatefulWidget {
       required this.data,
       required this.myItems,
       required this.attendance,
+      required this.noInput,
       required this.onBack,
       required this.onChanged});
   @override
@@ -117,6 +133,20 @@ class _MeetingInputState extends State<_MeetingInput> {
   String _source = agendaSources.first;
   late final Future<List<OpenIssue>> _issues = Repo.openIssuesForMeeting(widget.meeting.id);
   late String? _attendance = widget.attendance;
+  // null = not answered yet; true = has topics; false = nothing to add this time
+  late bool? _hasTopics = widget.myItems.isNotEmpty ? true : (widget.noInput ? false : null);
+
+  Future<void> _setHasTopics(bool hasTopics) async {
+    final before = _hasTopics;
+    setState(() => _hasTopics = hasTopics);
+    final ok = await runAction(context, () => Repo.setNoInput(widget.meeting.id, !hasTopics),
+        success: hasTopics ? null : 'Saved: no topics this time');
+    if (!ok && mounted) {
+      setState(() => _hasTopics = before);
+    } else if (!hasTopics) {
+      widget.onChanged();
+    }
+  }
 
   Future<void> _setAttendance(String? mode) async {
     final before = _attendance;
@@ -146,6 +176,7 @@ class _MeetingInputState extends State<_MeetingInput> {
     if (ok) {
       _title.clear();
       _details.clear();
+      if (widget.noInput) await Repo.setNoInput(widget.meeting.id, false).catchError((_) {});
       widget.onChanged();
     }
   }
@@ -180,37 +211,59 @@ class _MeetingInputState extends State<_MeetingInput> {
           );
         },
       ),
-      const SizedBox(height: 12),
-      TextField(controller: _title, decoration: const InputDecoration(labelText: 'Topic')),
-      const SizedBox(height: 10),
-      TextField(
-          controller: _details,
-          maxLines: 3,
-          decoration: const InputDecoration(labelText: 'What do students say? What do you want?')),
-      const SizedBox(height: 10),
-      Row(children: [
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _source,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Source'),
-            items: [for (final s in agendaSources) DropdownMenuItem(value: s, child: Text(s))],
-            onChanged: (v) => setState(() => _source = v ?? _source),
+      const SectionTitle('Do you have topics for this meeting?'),
+      SegmentedButton<bool>(
+        emptySelectionAllowed: true,
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: true, icon: Icon(Icons.record_voice_over_outlined), label: Text('Yes, add topics')),
+          ButtonSegment(value: false, icon: Icon(Icons.do_not_disturb_alt_outlined), label: Text('No topics')),
+        ],
+        selected: _hasTopics == null ? <bool>{} : {_hasTopics!},
+        onSelectionChanged: (s) {
+          if (s.isNotEmpty) _setHasTopics(s.first);
+        },
+      ),
+      if (_hasTopics == false)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text('OK – the Head of Education can see you have nothing to add this time. '
+              'If something comes up, choose "Yes, add topics".',
+              style: Theme.of(context).textTheme.bodySmall),
+        ),
+      if (_hasTopics == true) ...[
+        const SizedBox(height: 12),
+        TextField(controller: _title, decoration: const InputDecoration(labelText: 'Topic')),
+        const SizedBox(height: 10),
+        TextField(
+            controller: _details,
+            maxLines: 3,
+            decoration: const InputDecoration(labelText: 'What do students say? What do you want?')),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _source,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Source'),
+              items: [for (final s in agendaSources) DropdownMenuItem(value: s, child: Text(s))],
+              onChanged: (v) => setState(() => _source = v ?? _source),
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 110,
-          child: TextField(
-              controller: _count,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '# students')),
-        ),
-      ]),
-      const SizedBox(height: 12),
-      FilledButton(onPressed: _send, child: const Text('Send to Head of Education')),
-      const SectionTitle('My items for this meeting'),
-      if (widget.myItems.isEmpty) const EmptyState('Nothing sent yet'),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 110,
+            child: TextField(
+                controller: _count,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '# students')),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: _send, child: const Text('Send to Head of Education')),
+      ],
+      if (widget.myItems.isNotEmpty || _hasTopics == true) const SectionTitle('My items for this meeting'),
+      if (widget.myItems.isEmpty && _hasTopics == true) const EmptyState('Nothing sent yet'),
       for (final a in widget.myItems)
         Card(
           child: ListTile(

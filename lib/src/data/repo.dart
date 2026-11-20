@@ -156,6 +156,22 @@ class Repo {
   static Future<void> setAttendance(String meetingId, String? mode) =>
       sb.rpc('set_attendance', params: {'p_meeting': meetingId, 'p_mode': mode});
 
+  /// "No topics this time" for a meeting
+  static Future<void> setNoInput(String meetingId, bool noInput) =>
+      sb.rpc('set_no_input', params: {'p_meeting': meetingId, 'p_no_input': noInput});
+
+  /// Meetings where the signed-in rep said they have no topics
+  static Future<Set<String>> myNoInput() async {
+    final rows = await sb.from('meeting_no_input').select('meeting_id').eq('user_id', uid);
+    return {for (final r in rows as List) r['meeting_id'] as String};
+  }
+
+  /// Officer: who said "no topics" for a meeting
+  static Future<Set<String>> noInputFor(String meetingId) async {
+    final rows = await sb.from('meeting_no_input').select('user_id').eq('meeting_id', meetingId);
+    return {for (final r in rows as List) r['user_id'] as String};
+  }
+
   /// Officer: all answers (optionally for one meeting)
   static Future<List<Attendance>> attendance({String? meetingId}) async {
     var q = sb.from('meeting_attendance').select();

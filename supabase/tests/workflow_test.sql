@@ -166,7 +166,11 @@ update public.agenda_items set status = 'included';
 
 -- 9. Automations (run as officer)
 select public.run_automations() as automation_result \gset
-insert into t select '9 automations: agenda call 7 days before (CS #3 in 5 days, Nursing in 40 days not yet)', (:'automation_result'::jsonb ->> 'agenda_calls')::int = 1;
+-- CS #3 (in 5 days) was already asked when it was created; Nursing (in 40 days) is not due yet
+insert into t select '9 automations: no second agenda call (CS #3 asked on creation, Nursing not yet)',
+  (:'automation_result'::jsonb ->> 'agenda_calls')::int = 0
+  and (select input_requested from public.meetings where title = 'CS #3')
+  and not (select input_requested from public.meetings where title = 'Nursing #2');
 insert into t select '9f input deadline defaults to 2 days before', (select input_deadline from public.meetings where title = 'CS #3') = ((now() + interval '5 days') at time zone 'Europe/Stockholm')::date - 2;
 insert into t select '9b automations: time-log prompts for CS #2 (2 members)', (:'automation_result'::jsonb ->> 'time_prompts')::int = 2;
 insert into t select '9c automations: issue escalated? (only 1 meeting since → no)', (:'automation_result'::jsonb ->> 'escalated')::int = 0;
@@ -257,6 +261,35 @@ select from pg_temp.as_user('Head of Education');
 insert into t select '12d officer sees 1 offline + 1 online',
   (select count(*) filter (where mode='offline') = 1 and count(*) filter (where mode='online') = 1
      from public.meeting_attendance where meeting_id = (select id from public.meetings where title='CS #3'));
+
+-- 13. New meeting notifies the council, officer posts notify, "no topics"
+select from pg_temp.as_user('Head of Education');
+insert into public.meetings (council_id, title, starts_at)
+select id, 'CS #9', now() + interval '3 days' from public.councils where name like 'Program council – Computer%';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '13 rep told about a new meeting at once',
+  exists (select 1 from public.notifications where title = 'New meeting: CS #9' and link like 'agenda/%');
+select from pg_temp.as_user('Omar Haddad');
+insert into t select '13b other council not told', not exists (select 1 from public.notifications where title = 'New meeting: CS #9');
+reset role;
+insert into t select '13c meeting inside the call window counts as asked',
+  (select input_requested from public.meetings where title = 'CS #9');
+select from pg_temp.as_user('Head of Education');
+insert into public.messages (channel_id, author_id, body)
+select id, auth.uid(), 'Remember the SIEC meeting' from public.channels where name = 'Allmänt';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '13d ordinary post by the Head of Education notifies reps',
+  exists (select 1 from public.notifications where title = 'Head of Education in Allmänt' and body = 'Remember the SIEC meeting');
+insert into public.messages (channel_id, author_id, body)
+select id, auth.uid(), 'Hi all' from public.channels where name = 'Allmänt';
+select from pg_temp.as_user('Lina Berg');
+insert into t select '13e rep posts do not notify', not exists (select 1 from public.notifications where body = 'Hi all');
+select from public.set_no_input((select id from public.meetings where title = 'CS #9'), true);
+select from public.set_no_input((select id from public.meetings where title = 'CS #9'), true);
+insert into t select '13f no-topics answer saved once', (select count(*) from public.meeting_no_input) = 1;
+select from pg_temp.as_user('Head of Education');
+insert into t select '13g officer sees who has no topics',
+  exists (select 1 from public.meeting_no_input n join public.profiles p on p.id = n.user_id where p.full_name = 'Lina Berg');
 
 reset role;
 \echo
