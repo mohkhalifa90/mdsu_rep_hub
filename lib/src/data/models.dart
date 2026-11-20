@@ -107,6 +107,30 @@ class Meeting {
   DateTime get inputDeadline => _inputDeadline ?? startsAt.subtract(const Duration(days: 2));
 }
 
+/// A post from the Head of Education. With [meetingId] it is that meeting's final agenda.
+class Post {
+  final String id;
+  final String? authorId;
+  final String title;
+  final String body;
+  final String? councilId; // null = all representatives
+  final String? meetingId;
+  final String? filePath;
+  final String? fileName;
+  final DateTime createdAt;
+  Post.fromMap(Map<String, dynamic> m)
+      : id = m['id'] as String,
+        authorId = m['author_id'] as String?,
+        title = (m['title'] ?? '') as String,
+        body = (m['body'] ?? '') as String,
+        councilId = m['council_id'] as String?,
+        meetingId = m['meeting_id'] as String?,
+        filePath = m['file_path'] as String?,
+        fileName = m['file_name'] as String?,
+        createdAt = _dt(m['created_at']);
+  bool get isFinalAgenda => meetingId != null;
+}
+
 /// How a representative attends a meeting.
 class Attendance {
   final String meetingId;

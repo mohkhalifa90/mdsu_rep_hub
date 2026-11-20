@@ -4,6 +4,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../push/push_service.dart';
 import '../push/web_push_card.dart';
+import '../shared/posts.dart';
 import '../shared/channels_page.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
@@ -68,6 +69,11 @@ class _RepShellState extends State<RepShell> {
       });
     }
     if (link.startsWith('chat/')) return setState(() => _tab = 3);
+    if (link.startsWith('posts')) {
+      Navigator.push(
+          context, MaterialPageRoute(builder: (_) => PostsPage(councils: d.councils, standalone: true)));
+      return;
+    }
     if (link == 'followups' || link == 'more') return setState(() => _tab = 4);
     if (link.startsWith('log/')) {
       setState(() => _tab = 1);
@@ -129,7 +135,9 @@ class _HomeData {
   final Set<String> loggedMeetingIds;
   final Set<String> agendaMeetingIds; // meetings with my topics or my "no topics" answer
   final int unreadAnnouncements;
-  _HomeData(this.report, this.meetings, this.loggedMeetingIds, this.agendaMeetingIds, this.unreadAnnouncements);
+  final List<Post> posts; // latest from the Head of Education
+  _HomeData(this.report, this.meetings, this.loggedMeetingIds, this.agendaMeetingIds, this.unreadAnnouncements,
+      this.posts);
 }
 
 class RepHomePage extends StatefulWidget {
@@ -157,6 +165,7 @@ class _RepHomePageState extends State<RepHomePage> {
       entries.map((e) => e.meetingId).whereType<String>().toSet(),
       {...agenda.where((a) => a.userId == d.me.id).map((a) => a.meetingId), ...await Repo.myNoInput()},
       await Repo.unreadAnnouncements(),
+      await Repo.posts(limit: 3),
     );
   }
 
@@ -243,6 +252,15 @@ class _RepHomePageState extends State<RepHomePage> {
               ),
             const WebPushCard(),
             if (todos.isNotEmpty) ...[const SectionTitle('To do'), ...todos],
+            if (h.posts.isNotEmpty) ...[
+              SectionTitle('From the Head of Education',
+                  trailing: TextButton(
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => PostsPage(councils: d.councils, standalone: true))),
+                    child: const Text('See all'),
+                  )),
+              for (final p in h.posts.take(2)) PostCard(post: p),
+            ],
             const SectionTitle('Upcoming meetings'),
             if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
             for (final m in upcoming)

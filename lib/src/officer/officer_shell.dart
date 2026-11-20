@@ -4,6 +4,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../push/push_service.dart';
 import '../rep/more_page.dart' show TutoringBoard;
+import '../shared/posts.dart';
 import '../shared/channels_page.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
@@ -57,6 +58,7 @@ class _OfficerShellState extends State<OfficerShell> {
     (Icons.dashboard_outlined, 'Overview'),
     (Icons.schedule, 'Time reports'),
     (Icons.forum_outlined, 'Channels'),
+    (Icons.campaign_outlined, 'Posts'),
     (Icons.list_alt, 'Agenda builder'),
     (Icons.loop, 'Follow-ups'),
     (Icons.people_outline, 'Representatives'),
@@ -68,8 +70,9 @@ class _OfficerShellState extends State<OfficerShell> {
   void _openLink(String link) {
     if (link == 'reports') setState(() => _tab = 1);
     if (link.startsWith('chat/')) setState(() => _tab = 2);
-    if (link.startsWith('agenda/')) setState(() => _tab = 3);
-    if (link == 'followups') setState(() => _tab = 4);
+    if (link.startsWith('posts')) setState(() => _tab = 3);
+    if (link.startsWith('agenda/')) setState(() => _tab = 4);
+    if (link == 'followups') setState(() => _tab = 5);
   }
 
   @override
@@ -82,6 +85,7 @@ class _OfficerShellState extends State<OfficerShell> {
           OverviewPage(key: ValueKey('ov$_refresh'), data: d, goTo: (i) => setState(() => _tab = i)),
           ReportsPage(key: ValueKey('rp$_refresh'), data: d),
           ChannelsPage(me: d.me, wide: MediaQuery.of(context).size.width > 800),
+          PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils),
           AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d),
           OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
           RepsPage(key: ValueKey('re$_refresh'), data: d),
@@ -221,7 +225,7 @@ class _OverviewPageState extends State<OverviewPage> {
                       title: Text(m.title),
                       subtitle: Text('${fmtDateTime(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
                       trailing: Text('${o.agenda.where((a) => a.meetingId == m.id).length} rep items'),
-                      onTap: () => widget.goTo(3),
+                      onTap: () => widget.goTo(4),
                     ),
                 ]),
               ),

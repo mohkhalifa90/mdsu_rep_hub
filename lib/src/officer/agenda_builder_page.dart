@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
 import 'agenda_docx.dart';
@@ -278,6 +279,11 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                       if (context.mounted) showSnack(context, errorText(e));
                     }
                   },
+                ),
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.publish_outlined),
+                  label: const Text('Publish final agenda'),
+                  onPressed: () => showNewPostDialog(context, councils: widget.data.councils, meeting: m),
                 ),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.description_outlined),

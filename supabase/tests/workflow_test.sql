@@ -274,6 +274,7 @@ insert into t select '13b other council not told', not exists (select 1 from pub
 reset role;
 insert into t select '13c meeting inside the call window counts as asked',
   (select input_requested from public.meetings where title = 'CS #9');
+set role authenticated;
 select from pg_temp.as_user('Head of Education');
 insert into public.messages (channel_id, author_id, body)
 select id, auth.uid(), 'Remember the SIEC meeting' from public.channels where name = 'Allmänt';
@@ -290,6 +291,29 @@ insert into t select '13f no-topics answer saved once', (select count(*) from pu
 select from pg_temp.as_user('Head of Education');
 insert into t select '13g officer sees who has no topics',
   exists (select 1 from public.meeting_no_input n join public.profiles p on p.id = n.user_id where p.full_name = 'Lina Berg');
+
+-- 14. Posts and final agendas
+select from pg_temp.as_user('Head of Education');
+insert into public.posts (title, body) values ('Welcome', 'Read the handbook');
+insert into public.posts (title, body, council_id)
+select 'CS only', 'For the CS council', id from public.councils where name like 'Program council – Computer%';
+insert into public.posts (title, file_name, file_path, meeting_id)
+select 'Final agenda', 'agenda.pdf', 'x/agenda.pdf', id from public.meetings where title = 'CS #9';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '14 rep sees post for all + own council + final agenda', (select count(*) from public.posts) = 3;
+insert into t select '14b rep told about the post',
+  exists (select 1 from public.notifications where title = 'From the Head of Education: Welcome' and link like 'posts/%');
+insert into t select '14c final agenda notification opens the meeting',
+  exists (select 1 from public.notifications where title = 'Final agenda: CS #9' and link like 'agenda/%');
+insert into t select '14d final agenda took the meeting''s council',
+  (select council_id from public.posts where title = 'Final agenda') = (select council_id from public.meetings where title = 'CS #9');
+do $$ begin
+  insert into public.posts (title) values ('rep post');
+  insert into t values ('14e rep cannot post', false);
+exception when others then insert into t values ('14e rep cannot post', true); end $$;
+select from pg_temp.as_user('Omar Haddad');
+insert into t select '14f other council sees only the post for all', (select count(*) from public.posts) = 1
+  and not exists (select 1 from public.notifications where title = 'From the Head of Education: CS only');
 
 reset role;
 \echo

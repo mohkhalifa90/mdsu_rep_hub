@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/widgets.dart';
@@ -17,6 +18,13 @@ class MorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView(children: [
+        ListTile(
+          leading: const Icon(Icons.campaign_outlined),
+          title: const Text('From the Head of Education'),
+          subtitle: const Text('News, instructions and final agendas'),
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => PostsPage(councils: data.councils, standalone: true))),
+        ),
         ListTile(
           leading: const Icon(Icons.loop),
           title: const Text('Follow-ups'),

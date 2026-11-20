@@ -146,6 +146,57 @@ class Repo {
     return {for (final r in rows) r is Map ? r.values.first as String : r as String};
   }
 
+  // ---------- posts from the Head of Education ----------
+  static const postsBucket = 'posts';
+
+  static Future<List<Post>> posts({int limit = 50}) async => _list(
+      await sb.from('posts').select().order('created_at', ascending: false).limit(limit), Post.fromMap);
+
+  /// Latest final agenda published for a meeting, if any
+  static Future<Post?> finalAgenda(String meetingId) async {
+    final r = await sb
+        .from('posts')
+        .select()
+        .eq('meeting_id', meetingId)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    return r == null ? null : Post.fromMap(r);
+  }
+
+  static Future<void> createPost({
+    required String title,
+    String body = '',
+    String? councilId,
+    String? meetingId,
+    String? fileName,
+    Uint8List? bytes,
+  }) async {
+    String? path;
+    if (fileName != null && bytes != null) {
+      final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+      path = '${DateTime.now().millisecondsSinceEpoch}_$safe';
+      await sb.storage.from(postsBucket).uploadBinary(path, bytes);
+    }
+    await sb.from('posts').insert({
+      'title': title,
+      'body': body,
+      'council_id': councilId,
+      'meeting_id': meetingId,
+      'file_path': path,
+      'file_name': path == null ? null : fileName,
+    });
+  }
+
+  static Future<void> deletePost(Post p) async {
+    await sb.from('posts').delete().eq('id', p.id);
+    if (p.filePath != null) {
+      await sb.storage.from(postsBucket).remove([p.filePath!]).catchError((_) => <FileObject>[]);
+    }
+  }
+
+  static Future<String> postFileUrl(String path) => sb.storage.from(postsBucket).createSignedUrl(path, 300);
+
   // ---------- attendance ----------
   /// The signed-in rep's answers: meeting id → mode
   static Future<Map<String, String>> myAttendance() async {

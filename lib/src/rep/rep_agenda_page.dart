@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/attendance_picker.dart';
 import '../shared/widgets.dart';
@@ -132,6 +133,7 @@ class _MeetingInputState extends State<_MeetingInput> {
   final _count = TextEditingController(text: '5');
   String _source = agendaSources.first;
   late final Future<List<OpenIssue>> _issues = Repo.openIssuesForMeeting(widget.meeting.id);
+  late final Future<Post?> _finalAgenda = Repo.finalAgenda(widget.meeting.id);
   late String? _attendance = widget.attendance;
   // null = not answered yet; true = has topics; false = nothing to add this time
   late bool? _hasTopics = widget.myItems.isNotEmpty ? true : (widget.noInput ? false : null);
@@ -192,6 +194,12 @@ class _MeetingInputState extends State<_MeetingInput> {
       Text(m.title, style: Theme.of(context).textTheme.titleLarge),
       Text('${fmtDateTime(m.startsAt)} · input closes ${fmtDate(m.inputDeadline)}'),
       if (m.location != null && m.location!.isNotEmpty) Text(m.location!),
+      FutureBuilder<Post?>(
+        future: _finalAgenda,
+        builder: (context, s) => s.data == null
+            ? const SizedBox.shrink()
+            : Padding(padding: const EdgeInsets.only(top: 12), child: PostCard(post: s.data!)),
+      ),
       const SectionTitle('How will you attend?'),
       AttendancePicker(value: _attendance, onChanged: _setAttendance),
       FutureBuilder<List<OpenIssue>>(
