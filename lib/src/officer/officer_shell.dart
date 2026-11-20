@@ -12,6 +12,7 @@ import 'admin_pages.dart';
 import 'agenda_builder_page.dart';
 import 'councils_page.dart';
 import 'reports_page.dart';
+import 'today_page.dart';
 
 class OfficerData {
   final Profile me;
@@ -28,7 +29,7 @@ class OfficerData {
   static Future<OfficerData> load(Profile me) async => OfficerData(me, await Repo.semester(), await Repo.councils());
 }
 
-/// Desktop control panel for the Head of Education.
+/// Control panel for the Head of Education: side rail on a computer, menu on a phone.
 class OfficerShell extends StatefulWidget {
   final Profile me;
   const OfficerShell({super.key, required this.me});
@@ -38,8 +39,9 @@ class OfficerShell extends StatefulWidget {
 
 class _OfficerShellState extends State<OfficerShell> {
   late Future<OfficerData> _f = OfficerData.load(widget.me);
-  int _tab = 0;
+  String _tab = 'today';
   int _refresh = 0;
+  final _scaffold = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -55,25 +57,41 @@ class _OfficerShellState extends State<OfficerShell> {
       });
 
   static const _dest = [
-    (Icons.dashboard_outlined, 'Overview'),
-    (Icons.schedule, 'Time reports'),
-    (Icons.forum_outlined, 'Channels'),
-    (Icons.campaign_outlined, 'Posts'),
-    (Icons.list_alt, 'Agenda builder'),
-    (Icons.loop, 'Follow-ups'),
-    (Icons.people_outline, 'Representatives'),
-    (Icons.account_balance_outlined, 'Councils'),
-    (Icons.school_outlined, 'Tutoring board'),
-    (Icons.settings_outlined, 'Automations & settings'),
+    ('today', Icons.today_outlined, 'Today'),
+    ('reports', Icons.schedule, 'Time reports'),
+    ('chat', Icons.forum_outlined, 'Channels'),
+    ('posts', Icons.campaign_outlined, 'Posts'),
+    ('agenda', Icons.list_alt, 'Agenda builder'),
+    ('followups', Icons.loop, 'Follow-ups'),
+    ('reps', Icons.people_outline, 'Representatives'),
+    ('councils', Icons.account_balance_outlined, 'Councils'),
+    ('stats', Icons.insights_outlined, 'Statistics'),
+    ('tutoring', Icons.school_outlined, 'Tutoring board'),
+    ('settings', Icons.settings_outlined, 'Automations & settings'),
   ];
 
+  int get _index => _dest.indexWhere((d) => d.$1 == _tab);
+
+  void _goTo(String page) => setState(() => _tab = page);
+
   void _openLink(String link) {
-    if (link == 'reports') setState(() => _tab = 1);
-    if (link.startsWith('chat/')) setState(() => _tab = 2);
-    if (link.startsWith('posts')) setState(() => _tab = 3);
-    if (link.startsWith('agenda/')) setState(() => _tab = 4);
-    if (link == 'followups') setState(() => _tab = 5);
+    final page = link.split('/').first;
+    if (_dest.any((d) => d.$1 == page)) _goTo(page);
   }
+
+  Widget _page(OfficerData d) => switch (_tab) {
+        'reports' => ReportsPage(key: ValueKey('rp$_refresh'), data: d),
+        'chat' => ChannelsPage(me: d.me, wide: MediaQuery.of(context).size.width > 800),
+        'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils),
+        'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d),
+        'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
+        'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d),
+        'councils' => CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
+        'stats' => StatisticsPage(key: ValueKey('st$_refresh'), data: d, goTo: _goTo),
+        'tutoring' => TutoringBoard(me: d.me),
+        'settings' => SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
+        _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _goTo),
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -81,48 +99,84 @@ class _OfficerShellState extends State<OfficerShell> {
       future: _f,
       onRetry: _reload,
       builder: (context, d) {
-        final pages = <Widget>[
-          OverviewPage(key: ValueKey('ov$_refresh'), data: d, goTo: (i) => setState(() => _tab = i)),
-          ReportsPage(key: ValueKey('rp$_refresh'), data: d),
-          ChannelsPage(me: d.me, wide: MediaQuery.of(context).size.width > 800),
-          PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils),
-          AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d),
-          OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
-          RepsPage(key: ValueKey('re$_refresh'), data: d),
-          CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
-          TutoringBoard(me: d.me),
-          SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
-        ];
-        final extended = MediaQuery.of(context).size.width > 1100;
+        final width = MediaQuery.of(context).size.width;
+        final phone = width < 720;
+        final extended = width > 1100;
+        final rail = NavigationRail(
+          scrollable: true,
+          extended: extended,
+          selectedIndex: _index,
+          labelType: extended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
+          onDestinationSelected: (i) => _goTo(_dest[i].$1),
+          destinations: [
+            for (final (_, icon, label) in _dest) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
+          ],
+        );
         return Scaffold(
+          key: _scaffold,
           appBar: AppBar(
-            leading: Padding(padding: const EdgeInsets.all(10), child: Image.asset('assets/logo_symbol.png')),
-            title: Text('Rep Hub · ${_dest[_tab].$2}'),
+            leading: phone
+                ? IconButton(
+                    tooltip: 'Menu', icon: const Icon(Icons.menu), onPressed: () => _scaffold.currentState?.openDrawer())
+                : Padding(padding: const EdgeInsets.all(10), child: Image.asset('assets/logo_symbol.png')),
+            title: Text(phone ? _dest[_index].$3 : 'Rep Hub · ${_dest[_index].$3}'),
             actions: [
-              if (d.semester != null)
+              if (d.semester != null && !phone)
                 Center(child: Padding(padding: const EdgeInsets.only(right: 12), child: Text(d.semester!.name))),
               NotificationBell(onOpen: _openLink),
-              IconButton(tooltip: 'Refresh', onPressed: _reload, icon: const Icon(Icons.refresh)),
-              IconButton(
-                  tooltip: 'Change my password',
-                  onPressed: () => showChangePasswordDialog(context),
-                  icon: const Icon(Icons.key_outlined)),
-              IconButton(tooltip: 'Sign out', onPressed: Repo.signOut, icon: const Icon(Icons.logout)),
+              if (!phone) ...[
+                IconButton(tooltip: 'Refresh', onPressed: _reload, icon: const Icon(Icons.refresh)),
+                IconButton(
+                    tooltip: 'Change my password',
+                    onPressed: () => showChangePasswordDialog(context),
+                    icon: const Icon(Icons.key_outlined)),
+                IconButton(tooltip: 'Sign out', onPressed: Repo.signOut, icon: const Icon(Icons.logout)),
+              ] else
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'refresh') _reload();
+                    if (v == 'password') showChangePasswordDialog(context);
+                    if (v == 'out') Repo.signOut();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'refresh', child: Text('Refresh')),
+                    PopupMenuItem(value: 'password', child: Text('Change my password')),
+                    PopupMenuItem(value: 'out', child: Text('Sign out')),
+                  ],
+                ),
             ],
           ),
-          body: Row(children: [
-            NavigationRail(
-              extended: extended,
-              selectedIndex: _tab,
-              labelType: extended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
-              onDestinationSelected: (i) => setState(() => _tab = i),
-              destinations: [
-                for (final (icon, label) in _dest) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
-              ],
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: pages[_tab]),
-          ]),
+          drawer: phone
+              ? NavigationDrawer(
+                  selectedIndex: _index,
+                  onDestinationSelected: (i) {
+                    _scaffold.currentState?.closeDrawer();
+                    _goTo(_dest[i].$1);
+                  },
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 20, 16, 12),
+                      child: Row(children: [
+                        SizedBox(height: 32, child: Image.asset('assets/logo_symbol.png')),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(d.semester == null ? 'Rep Hub' : 'Rep Hub · ${d.semester!.name}',
+                              style: Theme.of(context).textTheme.titleMedium),
+                        ),
+                      ]),
+                    ),
+                    for (final (_, icon, label) in _dest)
+                      NavigationDrawerDestination(icon: Icon(icon), label: Text(label)),
+                  ],
+                )
+              : null,
+          body: phone
+              ? _page(d)
+              : Row(children: [
+                  rail,
+                  const VerticalDivider(width: 1),
+                  Expanded(child: _page(d)),
+                ]),
         );
       },
     );
@@ -130,31 +184,32 @@ class _OfficerShellState extends State<OfficerShell> {
 }
 
 // ---------------------------------------------------------------------------
-class _Overview {
+class _Stats {
   final List<ReportRow> reports;
   final List<Meeting> meetings;
   final List<Issue> issues;
   final List<AgendaItem> agenda;
-  _Overview(this.reports, this.meetings, this.issues, this.agenda);
+  _Stats(this.reports, this.meetings, this.issues, this.agenda);
 }
 
-class OverviewPage extends StatefulWidget {
+/// The numbers: KPIs, who has not submitted, upcoming meetings.
+class StatisticsPage extends StatefulWidget {
   final OfficerData data;
-  final void Function(int) goTo;
-  const OverviewPage({super.key, required this.data, required this.goTo});
+  final void Function(String page) goTo;
+  const StatisticsPage({super.key, required this.data, required this.goTo});
   @override
-  State<OverviewPage> createState() => _OverviewPageState();
+  State<StatisticsPage> createState() => _StatisticsPageState();
 }
 
-class _OverviewPageState extends State<OverviewPage> {
-  late Future<_Overview> _f = _load();
-  Future<_Overview> _load() async =>
-      _Overview(await Repo.reportOverview(), await Repo.meetings(), await Repo.issues(), await Repo.agendaItems());
+class _StatisticsPageState extends State<StatisticsPage> {
+  late Future<_Stats> _f = _load();
+  Future<_Stats> _load() async =>
+      _Stats(await Repo.reportOverview(), await Repo.meetings(), await Repo.issues(), await Repo.agendaItems());
 
   @override
   Widget build(BuildContext context) {
     final s = widget.data.semester;
-    return Loader<_Overview>(
+    return Loader<_Stats>(
       future: _f,
       onRetry: () => setState(() => _f = _load()),
       builder: (context, o) {
@@ -164,7 +219,7 @@ class _OverviewPageState extends State<OverviewPage> {
         final notSubmitted = o.reports.where((r) => !r.isDone).toList();
         final openIssues = o.issues.where((i) => i.isOpen).length;
         final upcoming = o.meetings.where((m) => !m.isPast).take(6).toList();
-        return ListView(padding: const EdgeInsets.all(24), children: [
+        return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           Wrap(spacing: 12, runSpacing: 12, children: [
             Kpi(label: 'Active representatives', value: '${o.reports.length}',
                 sub: '${o.reports.where((r) => !r.isMember).length} not union members'),
@@ -225,7 +280,7 @@ class _OverviewPageState extends State<OverviewPage> {
                       title: Text(m.title),
                       subtitle: Text('${fmtDateTime(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
                       trailing: Text('${o.agenda.where((a) => a.meetingId == m.id).length} rep items'),
-                      onTap: () => widget.goTo(4),
+                      onTap: () => widget.goTo('agenda'),
                     ),
                 ]),
               ),

@@ -152,7 +152,7 @@ class Kpi extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: 190,
+        width: isNarrow(context) ? 155 : 190,
         child: Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -338,3 +338,33 @@ Future<void> showResetPasswordDialog(BuildContext context, {required String user
     ),
   );
 }
+
+
+/// Short explanation at the top of a page with its main buttons. Side by side on a wide
+/// screen, stacked on a phone so the text is not squeezed.
+class PageIntro extends StatelessWidget {
+  final String text;
+  final List<Widget> actions;
+  const PageIntro({super.key, required this.text, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        final t = Text(text, style: Theme.of(context).textTheme.bodyMedium);
+        if (c.maxWidth < 700) {
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            t,
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: actions),
+            ],
+          ]);
+        }
+        return Row(children: [
+          Expanded(child: t),
+          for (final a in actions) ...[const SizedBox(width: 8), a],
+        ]);
+      });
+}
+
+/// True on a phone-sized screen.
+bool isNarrow(BuildContext context) => MediaQuery.of(context).size.width < 720;

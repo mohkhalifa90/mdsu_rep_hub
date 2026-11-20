@@ -114,14 +114,14 @@ class _CouncilsPageState extends State<CouncilsPage> {
           for (final c in st.councils) {
             byType.putIfAbsent(c.type, () => []).add(c);
           }
-          return ListView(padding: const EdgeInsets.all(24), children: [
-            Row(children: [
-              const Expanded(
-                child: Text('The councils representatives sit on. Assign representatives to councils on the '
-                    'Representatives page.'),
-              ),
-              FilledButton.icon(onPressed: () => _edit(), icon: const Icon(Icons.add), label: const Text('New council')),
-            ]),
+          return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
+            PageIntro(
+              text: 'The councils representatives sit on. Assign representatives to councils on the '
+                  'Representatives page.',
+              actions: [
+                FilledButton.icon(onPressed: () => _edit(), icon: const Icon(Icons.add), label: const Text('New council')),
+              ],
+            ),
             for (final type in _typeLabels.keys)
               if (byType[type] != null) ...[
                 SectionTitle(_typeLabels[type]!),

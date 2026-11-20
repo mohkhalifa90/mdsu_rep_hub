@@ -30,12 +30,11 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
       builder: (context, data) {
         final (issues, names) = data;
         final list = issues.where((i) => _filter == 'all' || (_filter == 'open' ? i.isOpen : i.status == _filter));
-        return ListView(padding: const EdgeInsets.all(24), children: [
-          Row(children: [
-            Expanded(
-              child: Text('Every issue raised in a council is tracked until the university answers. Open issues are '
-                  'carried to the next meeting and escalated after ${s?.escalateAfter ?? 2} meetings without an answer.'),
-            ),
+        return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
+          PageIntro(
+            text: 'Every issue raised in a council is tracked until the university answers. Open issues are '
+                'carried to the next meeting and escalated after ${s?.escalateAfter ?? 2} meetings without an answer.',
+            actions: [
             FilledButton.icon(
               onPressed: () async {
                 if (await showAddIssueDialog(context,
@@ -46,7 +45,8 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
               icon: const Icon(Icons.add),
               label: const Text('Log issue'),
             ),
-          ]),
+            ],
+          ),
           const SizedBox(height: 12),
           Wrap(spacing: 8, children: [
             for (final f in const [
@@ -207,7 +207,7 @@ class _RepsPageState extends State<RepsPage> {
   Widget build(BuildContext context) => Loader<List<Profile>>(
         future: _f,
         onRetry: _reload,
-        builder: (context, people) => ListView(padding: const EdgeInsets.all(24), children: [
+        builder: (context, people) => ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           const Card(
             child: ListTile(
               leading: Icon(Icons.info_outline),
@@ -380,7 +380,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ('Escalate unanswered issues', 'After ${_esc.text} meetings without an answer the issue is marked escalated.'),
       ('Deadline reminders', 'On the reminder date and 3 days before the deadline, to everyone who has not submitted.'),
     ];
-    return ListView(padding: const EdgeInsets.all(24), children: [
+    return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
       if (s == null)
         Card(
           child: ListTile(
@@ -433,9 +433,8 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         const SizedBox(height: 8),
-        Row(children: [
+        Wrap(spacing: 12, runSpacing: 8, children: [
           FilledButton(onPressed: _save, child: const Text('Save settings')),
-          const SizedBox(width: 12),
           OutlinedButton(onPressed: _newSemester, child: const Text('Start new semester…')),
         ]),
         const SizedBox(height: 8),

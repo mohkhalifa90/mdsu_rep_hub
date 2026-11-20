@@ -109,12 +109,11 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
         final (meetings, names) = data;
         final sel = meetings.where((m) => m.id == _sel).toList();
         final m = sel.isNotEmpty ? sel.first : (meetings.isEmpty ? null : meetings.first);
-        return ListView(padding: const EdgeInsets.all(24), children: [
-          Row(children: [
-            const Expanded(
-              child: Text('Reps send items from the app. Unanswered issues from earlier meetings are added '
-                  'automatically, so nothing is forgotten.'),
-            ),
+        return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
+          PageIntro(
+            text: 'Reps send items from the app. Unanswered issues from earlier meetings are added '
+                'automatically, so nothing is forgotten.',
+            actions: [
             OutlinedButton.icon(
               onPressed: () async {
                 try {
@@ -127,9 +126,9 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               icon: const Icon(Icons.how_to_reg_outlined),
               label: const Text('Attendance (Excel)'),
             ),
-            const SizedBox(width: 8),
             FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
-          ]),
+            ],
+          ),
           const SizedBox(height: 12),
           if (m == null)
             const EmptyState('No upcoming meetings')
@@ -182,7 +181,8 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
     for (final l in [...byMode.values, missing]) {
       l.sort();
     }
-    Widget group(String label, IconData icon, Color color, List<String> people) => Expanded(
+    Widget group(String label, IconData icon, Color color, List<String> people) => SizedBox(
+          width: 170,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Icon(icon, size: 18, color: color),
@@ -197,7 +197,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Wrap(spacing: 16, runSpacing: 16, children: [
           group('In the room', Icons.meeting_room_outlined, Colors.green.shade700, byMode['offline']!),
           group('Online', Icons.videocam_outlined, Colors.blue.shade700, byMode['online']!),
           group('Can\'t attend', Icons.event_busy_outlined, Colors.red.shade700, byMode['absent']!),
@@ -242,10 +242,15 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
         final (fol, items, answers, members, noInput) = data;
         return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Card(
-            child: ListTile(
-              title: Text('${m.title} · ${widget.data.council(m.councilId)?.name ?? ''}'),
-              subtitle: Text('${fmtDateTime(m.startsAt)} · ${m.location ?? ''} · input closes ${fmtDate(m.inputDeadline)}'),
-              trailing: Wrap(spacing: 8, children: [
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${m.title} · ${widget.data.council(m.councilId)?.name ?? ''}',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 2),
+              Text('${fmtDateTime(m.startsAt)} · ${m.location ?? ''} · input closes ${fmtDate(m.inputDeadline)}'),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 if (m.inputRequested)
                   StatusChip('Input requested ✓', Colors.green.shade700)
                 else
@@ -312,6 +317,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                     }
                   },
                 ),
+              ]),
               ]),
             ),
           ),

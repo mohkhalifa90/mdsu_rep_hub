@@ -102,21 +102,18 @@ class _ReportsPageState extends State<ReportsPage> {
       onRetry: _reload,
       builder: (context, rows) {
         final submitted = rows.where((r) => r.isDone).toList();
-        return ListView(padding: const EdgeInsets.all(24), children: [
-          Row(children: [
-            Expanded(
-              child: Text(
-                  'Reps log hours in the app and press Submit. Reports arrive here by name; pay is calculated automatically.',
-                  style: Theme.of(context).textTheme.bodyMedium),
-            ),
-            TextButton.icon(
-                onPressed: _exportPayroll, icon: const Icon(Icons.copy), label: const Text('Copy for Excel')),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-                onPressed: _downloadExcel,
-                icon: const Icon(Icons.download),
-                label: const Text('Download Excel (.xlsx)')),
-          ]),
+        return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
+          PageIntro(
+            text: 'Reps log hours in the app and press Submit. Reports arrive here by name; pay is calculated automatically.',
+            actions: [
+              TextButton.icon(
+                  onPressed: _exportPayroll, icon: const Icon(Icons.copy), label: const Text('Copy for Excel')),
+              FilledButton.icon(
+                  onPressed: _downloadExcel,
+                  icon: const Icon(Icons.download),
+                  label: const Text('Download Excel (.xlsx)')),
+            ],
+          ),
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
             Kpi(label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
@@ -188,17 +185,14 @@ class _ReportDetail extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
+            Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
               Text('${row.fullName} – time report', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(width: 12),
               StatusChip.report(row.status),
-              const Spacer(),
               if (row.status == 'submitted') ...[
                 OutlinedButton.icon(
                     onPressed: () => onReview(row, 'return'),
                     icon: const Icon(Icons.undo),
                     label: const Text('Return with comment')),
-                const SizedBox(width: 8),
                 FilledButton.icon(
                     onPressed: () => onReview(row, 'approve'), icon: const Icon(Icons.check), label: const Text('Approve')),
               ],
