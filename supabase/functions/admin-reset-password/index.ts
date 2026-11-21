@@ -59,10 +59,12 @@ Deno.serve(async (req) => {
   const { error } = await admin.auth.admin.updateUserById(userId, { password });
   if (error) return json({ error: error.message }, 500);
 
+  // They choose their own password the next time they sign in
+  await admin.from("profiles").update({ must_change_password: true }).eq("id", userId);
   await admin.from("notifications").insert({
     user_id: userId,
     title: "Your password was reset",
-    body: "The Head of Education gave you a temporary password. Please change it under More → My profile.",
+    body: "The Head of Education gave you a temporary password. You will choose your own when you sign in.",
     link: "more",
   });
   return json({ ok: true, user: target.full_name });

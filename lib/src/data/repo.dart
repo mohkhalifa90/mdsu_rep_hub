@@ -38,7 +38,32 @@ class Repo {
   }
 
   /// Any signed-in user changes their own password.
-  static Future<void> changeMyPassword(String password) => sb.auth.updateUser(UserAttributes(password: password));
+  static Future<void> changeMyPassword(String password) async {
+    await sb.auth.updateUser(UserAttributes(password: password));
+    await sb.rpc('password_changed');
+  }
+
+  /// Can new people create an account themselves? (Asked before signing in.)
+  static Future<bool> signupOpen() async {
+    try {
+      return (await sb.rpc('signup_open')) as bool? ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<void> setSignupOpen(bool open) =>
+      sb.from('app_settings').update({'signup_open': open}).eq('id', true);
+
+  /// Head of Education creates an account (Edge Function admin-create-user). Returns the temporary password.
+  static Future<String> createAccount({required String fullName, required String email}) async {
+    final res = await sb.functions.invoke('admin-create-user', body: {'full_name': fullName, 'email': email});
+    final data = res.data;
+    if (res.status != 200 || data is! Map || data['ok'] != true) {
+      throw Exception(data is Map && data['error'] != null ? '${data['error']}' : 'Could not create the account');
+    }
+    return data['password'] as String;
+  }
 
   /// Head of Education sets a temporary password for a representative (Edge Function admin-reset-password).
   static Future<void> adminResetPassword(String userId, String password) async {

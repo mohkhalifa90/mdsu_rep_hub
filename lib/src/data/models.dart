@@ -16,6 +16,7 @@ class Profile {
   final bool quizPassed;
   final bool shareContact;
   final bool active;
+  final bool mustChangePassword; // got a temporary password from the Head of Education
 
   Profile.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -28,7 +29,8 @@ class Profile {
         isMember = (m['is_member'] ?? false) as bool,
         quizPassed = (m['quiz_passed'] ?? false) as bool,
         shareContact = (m['share_contact'] ?? false) as bool,
-        active = (m['active'] ?? true) as bool;
+        active = (m['active'] ?? true) as bool,
+        mustChangePassword = (m['must_change_password'] ?? false) as bool;
 
   bool get isOfficer => role == 'officer' || role == 'admin';
   String get initials {

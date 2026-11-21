@@ -88,12 +88,92 @@ class AuthGate extends StatelessWidget {
             if (!p.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
             final me = p.data!;
             if (!me.active) return _PendingApproval(me: me);
+            if (me.mustChangePassword) return _ChooseOwnPassword(me: me);
             return _PushRegistrar(child: me.isOfficer ? OfficerShell(me: me) : RepShell(me: me));
           },
         );
       },
     );
   }
+}
+
+/// After a temporary password from the Head of Education: choose your own before going on.
+class _ChooseOwnPassword extends StatefulWidget {
+  final Profile me;
+  const _ChooseOwnPassword({required this.me});
+  @override
+  State<_ChooseOwnPassword> createState() => _ChooseOwnPasswordState();
+}
+
+class _ChooseOwnPasswordState extends State<_ChooseOwnPassword> {
+  final _p1 = TextEditingController(), _p2 = TextEditingController();
+  String? _error;
+  bool _busy = false;
+
+  Future<void> _save() async {
+    if (_p1.text.length < 8) return setState(() => _error = 'At least 8 characters');
+    if (_p1.text != _p2.text) return setState(() => _error = 'The two passwords are not the same');
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await Repo.changeMyPassword(_p1.text);
+      if (mounted) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AuthGate()));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = errorText(e);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Image.asset('assets/logo.png', height: 48),
+                const SizedBox(height: 24),
+                Text('Welcome, ${widget.me.fullName}!',
+                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                const Text('You signed in with a temporary password. Choose your own password to continue.',
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                TextField(
+                    controller: _p1,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.newPassword],
+                    decoration: const InputDecoration(labelText: 'New password (8+ characters)')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: _p2,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Repeat new password'),
+                    onSubmitted: (_) => _save()),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Text(_error!, style: TextStyle(color: Colors.red.shade800)),
+                  ),
+                const SizedBox(height: 16),
+                FilledButton(
+                    onPressed: _busy ? null : _save,
+                    child: const Padding(padding: EdgeInsets.all(12), child: Text('Save and continue'))),
+                TextButton(onPressed: Repo.signOut, child: const Text('Sign out')),
+              ]),
+            ),
+          ),
+        ),
+      );
 }
 
 /// New accounts wait until the Head of Education activates them.

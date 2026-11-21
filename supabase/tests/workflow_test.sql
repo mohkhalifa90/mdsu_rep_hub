@@ -365,7 +365,36 @@ do $$ begin
   insert into t values ('15j rep cannot add attendees', false);
 exception when others then insert into t values ('15j rep cannot add attendees', true); end $$;
 
+-- 16. Sign-up control
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+update public.app_settings set signup_open = false;
+do $$ begin
+  insert into auth.users (email) values ('late@student.mdu.se');
+  insert into t values ('16 closed sign-up blocks new accounts', false);
+exception when others then insert into t values ('16 closed sign-up blocks new accounts', sqlerrm like 'SIGNUP_CLOSED%'); end $$;
+insert into public.account_invites (email) values ('new.rep@student.mdu.se');
+insert into auth.users (email, raw_user_meta_data) values ('new.rep@student.mdu.se', '{"full_name":"New Rep"}');
+insert into t select '16b account made by the Head of Education: active, must change password, invite used',
+  (select active and must_change_password from public.profiles where email = 'new.rep@student.mdu.se')
+  and not exists (select 1 from public.account_invites);
+update public.app_settings set signup_open = true;
+select set_config('request.jwt.claim.sub', (select id::text from public.profiles where email = 'new.rep@student.mdu.se'), false);
+set role authenticated;
+select public.password_changed();
+insert into t select '16c flag cleared after own password', not (select must_change_password from public.profiles where id = auth.uid());
+do $$ begin
+  update public.app_settings set signup_open = false;
+  insert into t values ('16d rep cannot close sign-up', not (select signup_open from public.app_settings) = false);
+exception when others then insert into t values ('16d rep cannot close sign-up', true); end $$;
+do $$ begin
+  perform 1 from public.account_invites;
+  insert into t values ('16e rep cannot read invites', false);
+exception when others then insert into t values ('16e rep cannot read invites', true); end $$;
+reset role;
+insert into t select '16f sign-up still open', public.signup_open();
+
 reset role;
 \echo
-select case when passed then 'PASS' else 'FAIL' end as result, name from t order by name;
-select count(*) filter (where not passed) as failures, count(*) as total from t;
+select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;
+select count(*) filter (where passed is not true) as failures, count(*) as total from t;

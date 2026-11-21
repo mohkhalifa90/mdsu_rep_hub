@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
@@ -203,18 +204,100 @@ class _RepsPageState extends State<RepsPage> {
     }
   }
 
+  /// Make an account for a representative and show the temporary password to send them.
+  Future<void> _createAccount() async {
+    final name = TextEditingController(), email = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Create account'),
+        content: SizedBox(
+          width: 400,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: name,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Full name')),
+            const SizedBox(height: 10),
+            TextField(
+                controller: email,
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+                decoration: const InputDecoration(labelText: 'Email', hintText: 'abc12345@student.mdu.se')),
+            const SizedBox(height: 10),
+            const Text('The account is active at once. They must choose their own password the first time they sign in.'),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      final pw = await Repo.createAccount(fullName: name.text.trim(), email: email.text.trim());
+      if (!mounted) return;
+      final message = 'Hi ${name.text.trim().split(' ').first}! Your MDSU Rep Hub account is ready.\n'
+          'Open https://mdsu-rep-hub.pages.dev (or the app) and sign in with\n'
+          'Email: ${email.text.trim()}\nTemporary password: $pw\n'
+          'You will be asked to choose your own password.';
+      _reload();
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Account created ✓'),
+          content: SizedBox(
+            width: 440,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Send this to the representative (Teams or email):'),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                child: SelectableText(message),
+              ),
+              const SizedBox(height: 8),
+              const Text('Next: open them in the list and set program, academy, councils and membership.'),
+            ]),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: message));
+                if (ctx.mounted) showSnack(ctx, 'Copied');
+              },
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy message'),
+            ),
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Loader<List<Profile>>(
         future: _f,
         onRetry: _reload,
         builder: (context, people) => ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('Adding a representative'),
-              subtitle: Text('Ask the student to install the app and sign in with their student email. '
-                  'They appear here (greyed out) – open them, switch on Active and set program, academy, '
-                  'councils and membership.'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: PageIntro(
+                text: 'Adding a representative: either the student creates an account with their student email '
+                    '(they appear here greyed out – open them and switch on Active), or you press Create account '
+                    'and send them the temporary password. Then set program, academy, councils and membership.',
+                actions: [
+                  FilledButton.icon(
+                      onPressed: _createAccount,
+                      icon: const Icon(Icons.person_add_alt),
+                      label: const Text('Create account')),
+                ],
+              ),
             ),
           ),
           Card(
@@ -275,6 +358,23 @@ class _SettingsPageState extends State<SettingsPage> {
   late final _deadlineDays = TextEditingController(text: '${s?.agendaDeadlineDays ?? 2}');
   late DateTime? _deadline = s?.reportDeadline;
   late DateTime? _reminder = s?.reminderDate;
+  bool? _signupOpen;
+
+  @override
+  void initState() {
+    super.initState();
+    Repo.signupOpen().then((v) {
+      if (mounted) setState(() => _signupOpen = v);
+    });
+  }
+
+  Future<void> _setSignup(bool open) async {
+    setState(() => _signupOpen = open);
+    if (!await runAction(context, () => Repo.setSignupOpen(open),
+        success: open ? 'Sign-up is open' : 'Sign-up is closed – create accounts under Representatives')) {
+      if (mounted) setState(() => _signupOpen = !open);
+    }
+  }
 
   Future<DateTime?> _pick(DateTime? initial) => showDatePicker(
       context: context,
@@ -388,6 +488,19 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: FilledButton(onPressed: _newSemester, child: const Text('Create semester')),
           ),
         ),
+      const SectionTitle('Accounts'),
+      Card(
+        child: SwitchListTile(
+          secondary: const Icon(Icons.how_to_reg_outlined),
+          title: const Text('Students can create their own account'),
+          subtitle: Text(_signupOpen == false
+              ? 'Closed: only you create accounts (Representatives → Create account).'
+              : 'Open: anyone with a university email (@student.mdu.se) can sign up. '
+                  'New accounts wait until you switch them on.'),
+          value: _signupOpen ?? true,
+          onChanged: _signupOpen == null ? null : _setSignup,
+        ),
+      ),
       const SectionTitle('Automations (run every morning at 07:05)'),
       Card(
         child: Column(children: [

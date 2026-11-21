@@ -21,6 +21,15 @@ class _LoginPageState extends State<LoginPage> {
   bool _create = false;
   bool _busy = false;
   bool _hide = true;
+  bool _signupOpen = true;
+
+  @override
+  void initState() {
+    super.initState();
+    Repo.signupOpen().then((open) {
+      if (mounted) setState(() => _signupOpen = open);
+    });
+  }
 
   Future<void> _submit() async {
     final email = _email.text.trim();
@@ -47,7 +56,9 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         showSnack(
             context,
-            _create && (msg.contains('Database error') || msg.contains('EMAIL_DOMAIN'))
+            _create && msg.contains('SIGNUP_CLOSED')
+                ? 'New accounts are made by the Head of Education. Contact utbildning@mdsu.se.'
+                : _create && (msg.contains('Database error') || msg.contains('EMAIL_DOMAIN'))
                 ? 'Use your student email (…@student.mdu.se). Other email addresses cannot create an account.'
                 : (msg.toLowerCase().contains('invalid login')
                     ? 'Wrong email or password. Forgot it? Tap “Forgot password?” below.'
@@ -76,14 +87,18 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 4),
                 Text('Student representatives', textAlign: TextAlign.center, style: t.textTheme.bodySmall),
                 const SizedBox(height: 24),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('Sign in')),
-                    ButtonSegment(value: true, label: Text('Create account')),
-                  ],
-                  selected: {_create},
-                  onSelectionChanged: (s) => setState(() => _create = s.first),
-                ),
+                if (_signupOpen)
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Sign in')),
+                      ButtonSegment(value: true, label: Text('Create account')),
+                    ],
+                    selected: {_create},
+                    onSelectionChanged: (s) => setState(() => _create = s.first),
+                  )
+                else
+                  Text('New representative? The Head of Education creates your account and sends you a password.',
+                      textAlign: TextAlign.center, style: t.textTheme.bodySmall),
                 const SizedBox(height: 16),
                 if (_create) ...[
                   TextField(
