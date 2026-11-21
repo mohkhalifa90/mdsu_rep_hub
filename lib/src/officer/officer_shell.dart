@@ -40,6 +40,7 @@ class OfficerShell extends StatefulWidget {
 class _OfficerShellState extends State<OfficerShell> {
   late Future<OfficerData> _f = OfficerData.load(widget.me);
   String _tab = 'today';
+  String? _openMeeting; // agenda/<id> link
   int _refresh = 0;
   final _scaffold = GlobalKey<ScaffoldState>();
 
@@ -61,7 +62,7 @@ class _OfficerShellState extends State<OfficerShell> {
     ('reports', Icons.schedule, 'Time reports'),
     ('chat', Icons.forum_outlined, 'Channels'),
     ('posts', Icons.campaign_outlined, 'Posts'),
-    ('agenda', Icons.list_alt, 'Agenda builder'),
+    ('agenda', Icons.event_note_outlined, 'Meetings'),
     ('followups', Icons.loop, 'Follow-ups'),
     ('reps', Icons.people_outline, 'Representatives'),
     ('councils', Icons.account_balance_outlined, 'Councils'),
@@ -72,25 +73,35 @@ class _OfficerShellState extends State<OfficerShell> {
 
   int get _index => _dest.indexWhere((d) => d.$1 == _tab);
 
-  void _goTo(String page) => setState(() => _tab = page);
+  void _goTo(String page) => setState(() {
+        if (page != _tab) _openMeeting = null;
+        _tab = page;
+      });
 
   void _openLink(String link) {
-    final page = link.split('/').first;
+    final parts = link.split('/');
+    final page = parts.first;
     if (_dest.any((d) => d.$1 == page)) _goTo(page);
+    if (page == 'agenda' && parts.length > 1) {
+      setState(() {
+        _openMeeting = parts[1];
+        _refresh++; // rebuild the page so it opens the meeting
+      });
+    }
   }
 
   Widget _page(OfficerData d) => switch (_tab) {
         'reports' => ReportsPage(key: ValueKey('rp$_refresh'), data: d),
         'chat' => ChannelsPage(me: d.me, wide: MediaQuery.of(context).size.width > 800),
         'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils),
-        'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d),
+        'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d, openMeetingId: _openMeeting),
         'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
         'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d),
         'councils' => CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
-        'stats' => StatisticsPage(key: ValueKey('st$_refresh'), data: d, goTo: _goTo),
+        'stats' => StatisticsPage(key: ValueKey('st$_refresh'), data: d, goTo: _openLink),
         'tutoring' => TutoringBoard(me: d.me),
         'settings' => SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
-        _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _goTo),
+        _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _openLink),
       };
 
   @override
@@ -280,7 +291,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                       title: Text(m.title),
                       subtitle: Text('${fmtDateTime(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
                       trailing: Text('${o.agenda.where((a) => a.meetingId == m.id).length} rep items'),
-                      onTap: () => widget.goTo('agenda'),
+                      onTap: () => widget.goTo('agenda/${m.id}'),
                     ),
                 ]),
               ),

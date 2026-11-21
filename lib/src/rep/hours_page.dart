@@ -185,7 +185,9 @@ Future<bool> showLogTimeSheet(BuildContext context, RepData d, {String? meetingI
     );
     return false;
   }
-  final meetings = await Repo.meetings();
+  // Only meetings the rep said they attend (or was added to by the Head of Education)
+  final attending = (await Repo.myAttendance())..removeWhere((_, mode) => mode == 'absent');
+  final meetings = (await Repo.meetings()).where((m) => attending.containsKey(m.id)).toList();
   if (!context.mounted) return false;
   final saved = await showModalBottomSheet<bool>(
     context: context,
@@ -269,6 +271,10 @@ class _LogTimeFormState extends State<_LogTimeForm> {
   Future<void> _save() async {
     if (_activity == 'other' && _desc.text.trim().isEmpty) {
       return setState(() => _error = 'Describe what you did');
+    }
+    if ((_activity == 'council_meeting' || _activity == 'siec_meeting') && _meeting == null) {
+      return setState(() => _error = 'Choose the meeting. Only meetings you signed up for are listed – '
+          'if you were there without signing up, ask the Head of Education to add you.');
     }
     setState(() {
       _busy = true;
@@ -365,7 +371,10 @@ class _LogTimeFormState extends State<_LogTimeForm> {
         DropdownButtonFormField<String?>(
           value: _meeting,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Meeting (optional)'),
+          decoration: InputDecoration(
+              labelText: _activity == 'council_meeting' || _activity == 'siec_meeting' ? 'Meeting' : 'Meeting (optional)',
+              helperText: 'Only meetings you signed up for',
+          ),
           items: [
             const DropdownMenuItem<String?>(value: null, child: Text('—')),
             for (final m in pastMeetings)

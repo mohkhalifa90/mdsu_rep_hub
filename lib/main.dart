@@ -33,6 +33,9 @@ class RepHubApp extends StatelessWidget {
     return MaterialApp(
       title: 'MDSU Rep Hub',
       debugShowCheckedModeBanner: false,
+      // 24-hour clock everywhere (time pickers and times), as in Sweden
+      builder: (context, child) =>
+          MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
       theme: ThemeData(
         useMaterial3: true,
         // MDSU colours: blue from mdsu.se, light blue from the logo

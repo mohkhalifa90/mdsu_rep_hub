@@ -115,6 +115,8 @@ class _ReportsPageState extends State<ReportsPage> {
             ],
           ),
           const SizedBox(height: 12),
+          _Steps(rows: rows),
+          const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
             Kpi(label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
             Kpi(label: 'Hours in submitted reports',
@@ -135,6 +137,7 @@ class _ReportsPageState extends State<ReportsPage> {
                   DataColumn(label: Text('Hours'), numeric: true),
                   DataColumn(label: Text('Amount'), numeric: true),
                   DataColumn(label: Text('Documentation')),
+                  DataColumn(label: Text('Next step')),
                 ],
                 rows: [
                   for (final r in rows)
@@ -155,6 +158,7 @@ class _ReportsPageState extends State<ReportsPage> {
                             ? const Text('Notes ✓')
                             : Text('${r.entriesWithoutNotes} without notes',
                                 style: TextStyle(color: Colors.orange.shade900))),
+                        DataCell(_nextStep(r.status)),
                       ],
                     ),
                 ],
@@ -245,4 +249,67 @@ class _ReportDetail extends StatelessWidget {
           ]),
         ),
       );
+}
+
+
+/// What the Head of Education does next with a report in this status.
+Widget _nextStep(String status) {
+  final (text, color) = switch (status) {
+    'submitted' => ('Review: open it, then approve or return', Colors.orange.shade900),
+    'approved' => ('Send to payroll, then mark as paid', Colors.blue.shade800),
+    'paid' => ('Done ✓', Colors.green.shade700),
+    'returned' => ('Waiting for the rep to fix it', Colors.grey.shade700),
+    _ => ('Waiting for the rep to submit', Colors.grey.shade700),
+  };
+  return Text(text, style: TextStyle(color: color, fontWeight: status == 'submitted' ? FontWeight.bold : null));
+}
+
+/// The way a time report goes, with how many reports are at each step.
+class _Steps extends StatelessWidget {
+  final List<ReportRow> rows;
+  const _Steps({required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    int n(String s) => rows.where((r) => r.status == s).length;
+    final notYet = rows.where((r) => r.status == 'draft' || r.status == 'returned').length;
+    final steps = [
+      ('1', 'Reps submit', '$notYet not yet', Icons.send_outlined),
+      ('2', 'You review', '${n('submitted')} waiting', Icons.fact_check_outlined),
+      ('3', 'Download Excel for payroll', '${n('approved')} approved', Icons.download),
+      ('4', 'Mark as paid', '${n('paid')} paid', Icons.payments_outlined),
+    ];
+    final t = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(spacing: 6, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            for (var i = 0; i < steps.length; i++) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: i == 1 && n('submitted') > 0 ? Colors.orange.shade50 : t.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(steps[i].$4, size: 18),
+                  const SizedBox(width: 6),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${steps[i].$1}. ${steps[i].$2}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(steps[i].$3, style: t.textTheme.bodySmall),
+                  ]),
+                ]),
+              ),
+              if (i < steps.length - 1) const Icon(Icons.arrow_forward, size: 16),
+            ],
+          ]),
+          const SizedBox(height: 8),
+          Text('Click a name in the table to see the hours and notes, then Approve or Return with a comment. '
+              'After approving, download the Excel file for payroll and mark the reports as paid when the money is sent.',
+              style: t.textTheme.bodySmall),
+        ]),
+      ),
+    );
+  }
 }

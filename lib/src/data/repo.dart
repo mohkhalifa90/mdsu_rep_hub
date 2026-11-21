@@ -207,6 +207,10 @@ class Repo {
   static Future<void> setAttendance(String meetingId, String? mode) =>
       sb.rpc('set_attendance', params: {'p_meeting': meetingId, 'p_mode': mode});
 
+  /// Officer: set (or with null remove) someone's attendance, also after the meeting
+  static Future<void> setAttendanceFor(String meetingId, String userId, String? mode) =>
+      sb.rpc('set_attendance_for', params: {'p_meeting': meetingId, 'p_user': userId, 'p_mode': mode});
+
   /// "No topics this time" for a meeting
   static Future<void> setNoInput(String meetingId, bool noInput) =>
       sb.rpc('set_no_input', params: {'p_meeting': meetingId, 'p_no_input': noInput});
@@ -390,14 +394,19 @@ class Repo {
       .map((rows) => rows.map(Message.fromMap).toList());
 
   static Future<void> sendMessage(String channelId, String body,
-          {bool announcement = false, String? filePath, String? fileName}) =>
+          {bool announcement = false, String? filePath, String? fileName, String? parentId}) =>
       sb.from('messages').insert({
         'channel_id': channelId,
         'body': body,
         'is_announcement': announcement,
         'file_path': filePath,
         'file_name': fileName,
+        if (parentId != null) 'parent_id': parentId,
       });
+
+  /// Marks every message from the Head of Education in the channel as seen.
+  static Future<void> markChannelRead(String channelId) =>
+      sb.rpc('mark_channel_read', params: {'p_channel': channelId});
 
   static Future<Set<String>> myReadMessageIds() async {
     final rows = await sb.from('message_reads').select('message_id').eq('user_id', uid);

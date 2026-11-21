@@ -10,26 +10,64 @@ import 'agenda_docx.dart';
 import 'attendance_export.dart';
 import 'officer_shell.dart';
 
-/// Collects reps' agenda items per meeting + open follow-ups (auto carry-forward).
+/// Meetings: every meeting, upcoming and earlier. Opening one shows attendance, the reps'
+/// topics, open follow-ups (carried forward automatically) and the agenda tools.
 class AgendaBuilderPage extends StatefulWidget {
   final OfficerData data;
-  const AgendaBuilderPage({super.key, required this.data});
+  final String? openMeetingId; // from a notification link agenda/<id>
+  const AgendaBuilderPage({super.key, required this.data, this.openMeetingId});
   @override
   State<AgendaBuilderPage> createState() => _AgendaBuilderPageState();
 }
 
 class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
-  late Future<(List<Meeting>, Map<String, String>)> _f = _load();
-  String? _sel;
-  int _v = 0;
+  late Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _f = _load();
+  bool _deepLinkDone = false;
 
-  Future<(List<Meeting>, Map<String, String>)> _load() async =>
-      ((await Repo.meetings()).where((m) => !m.isPast).toList(), await Repo.memberNames());
+  Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _load() async =>
+      (await Repo.meetings(), await Repo.memberNames(), await Repo.agendaItems(), await Repo.attendance());
 
-  void _reload() => setState(() {
-        _f = _load();
-        _v++;
-      });
+  void _reload() => setState(() => _f = _load());
+
+  Future<void> _open(Meeting m, Map<String, String> names) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(title: Text(m.title)),
+          body: ListView(padding: EdgeInsets.all(isNarrow(ctx) ? 12 : 24), children: [
+            _MeetingAgenda(
+              meeting: m,
+              data: widget.data,
+              names: names,
+              onChanged: _reload,
+              onDeleted: () => Navigator.pop(ctx),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (mounted) _reload();
+  }
+
+  Widget _tile(Meeting m, Map<String, String> names, List<AgendaItem> items, List<Attendance> att) {
+    final topics = items.where((a) => a.meetingId == m.id && a.status != 'declined').length;
+    final mine = att.where((a) => a.meetingId == m.id);
+    final room = mine.where((a) => a.mode == 'offline').length;
+    final online = mine.where((a) => a.mode == 'online').length;
+    final absent = mine.where((a) => a.mode == 'absent').length;
+    return Card(
+      child: ListTile(
+        title: Text('${m.title} · ${widget.data.council(m.councilId)?.name ?? ''}'),
+        subtitle: Text('${m.isPast ? fmtDateY(m.startsAt) : fmtDateTime(m.startsAt)}'
+            '${m.location == null || m.location!.isEmpty ? '' : ' · ${m.location}'}\n'
+            '$topics topics · $room in the room · $online online · $absent can\'t attend'),
+        isThreeLine: true,
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _open(m, names),
+      ),
+    );
+  }
 
   Future<void> _addMeeting() async {
     final d = widget.data;
@@ -102,48 +140,45 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Loader<(List<Meeting>, Map<String, String>)>(
+    return Loader<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)>(
       future: _f,
       onRetry: _reload,
       builder: (context, data) {
-        final (meetings, names) = data;
-        final sel = meetings.where((m) => m.id == _sel).toList();
-        final m = sel.isNotEmpty ? sel.first : (meetings.isEmpty ? null : meetings.first);
+        final (meetings, names, items, att) = data;
+        final upcoming = meetings.where((m) => !m.isPast).toList();
+        final past = meetings.where((m) => m.isPast).toList().reversed.toList();
+        if (!_deepLinkDone && widget.openMeetingId != null) {
+          _deepLinkDone = true;
+          final hit = meetings.where((m) => m.id == widget.openMeetingId).toList();
+          if (hit.isNotEmpty) WidgetsBinding.instance.addPostFrameCallback((_) => _open(hit.first, names));
+        }
         return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           PageIntro(
-            text: 'Reps send items from the app. Unanswered issues from earlier meetings are added '
-                'automatically, so nothing is forgotten.',
+            text: 'All meetings. Open one to see who attends, the reps\' topics, follow-ups and to make the agenda. '
+                'Unanswered issues from earlier meetings are added automatically.',
             actions: [
-            OutlinedButton.icon(
-              onPressed: () async {
-                try {
-                  final where = await exportAttendanceXlsx(semester: widget.data.semester, councils: widget.data.councils);
-                  if (where != null && context.mounted) showSnack(context, 'Saved: $where');
-                } catch (e) {
-                  if (context.mounted) showSnack(context, errorText(e));
-                }
-              },
-              icon: const Icon(Icons.how_to_reg_outlined),
-              label: const Text('Attendance (Excel)'),
-            ),
-            FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final where =
+                        await exportAttendanceXlsx(semester: widget.data.semester, councils: widget.data.councils);
+                    if (where != null && context.mounted) showSnack(context, 'Saved: $where');
+                  } catch (e) {
+                    if (context.mounted) showSnack(context, errorText(e));
+                  }
+                },
+                icon: const Icon(Icons.how_to_reg_outlined),
+                label: const Text('Attendance (Excel)'),
+              ),
+              FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
             ],
           ),
-          const SizedBox(height: 12),
-          if (m == null)
-            const EmptyState('No upcoming meetings')
-          else ...[
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final x in meetings)
-                ChoiceChip(
-                  label: Text('${x.title} · ${fmtDate(x.startsAt)}'),
-                  selected: x.id == m.id,
-                  onSelected: (_) => setState(() => _sel = x.id),
-                ),
-            ]),
-            const SizedBox(height: 12),
-            _MeetingAgenda(key: ValueKey('${m.id}$_v'), meeting: m, data: widget.data, names: names, onChanged: _reload),
-          ],
+          const SectionTitle('Upcoming'),
+          if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
+          for (final m in upcoming) _tile(m, names, items, att),
+          SectionTitle('Earlier meetings (${past.length})'),
+          if (past.isEmpty) const EmptyState('No earlier meetings'),
+          for (final m in past) _tile(m, names, items, att),
         ]);
       },
     );
@@ -155,8 +190,14 @@ class _MeetingAgenda extends StatefulWidget {
   final OfficerData data;
   final Map<String, String> names;
   final VoidCallback onChanged;
+  final VoidCallback onDeleted;
   const _MeetingAgenda(
-      {super.key, required this.meeting, required this.data, required this.names, required this.onChanged});
+      {super.key,
+      required this.meeting,
+      required this.data,
+      required this.names,
+      required this.onChanged,
+      required this.onDeleted});
   @override
   State<_MeetingAgenda> createState() => _MeetingAgendaState();
 }
@@ -170,6 +211,75 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
         await Repo.councilMemberIds(widget.meeting.councilId),
         await Repo.noInputFor(widget.meeting.id),
       );
+
+  /// Add someone who came without signing up (or change/remove an answer). Attendees can
+  /// then log their time for the meeting.
+  Future<void> _addAttendee(Set<String> members, List<Attendance> answers) async {
+    final names = widget.names;
+    final ids = names.keys.toList()
+      ..sort((a, b) {
+        final ma = members.contains(a) ? 0 : 1, mb = members.contains(b) ? 0 : 1;
+        return ma != mb ? ma - mb : (names[a] ?? '').compareTo(names[b] ?? '');
+      });
+    String? who;
+    String mode = 'offline';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Add attendee'),
+          content: SizedBox(
+            width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              DropdownButtonFormField<String>(
+                initialValue: who,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Representative'),
+                items: [
+                  for (final id in ids)
+                    DropdownMenuItem(
+                        value: id,
+                        child: Text('${names[id]}${members.contains(id) ? '' : '  (not in this council)'}',
+                            overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setD(() {
+                  who = v;
+                  final a = answers.where((a) => a.userId == v).toList();
+                  if (a.isNotEmpty) mode = a.first.mode;
+                }),
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'offline', label: Text('In the room')),
+                  ButtonSegment(value: 'online', label: Text('Online')),
+                  ButtonSegment(value: 'absent', label: Text('Didn\'t attend')),
+                  ButtonSegment(value: 'remove', label: Text('No answer')),
+                ],
+                selected: {mode},
+                onSelectionChanged: (s) => setD(() => mode = s.first),
+              ),
+              const SizedBox(height: 8),
+              Text('People in the room or online can log time for this meeting.',
+                  style: Theme.of(ctx).textTheme.bodySmall),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || who == null || !mounted) return;
+    if (await runAction(
+        context, () => Repo.setAttendanceFor(widget.meeting.id, who!, mode == 'remove' ? null : mode),
+        success: 'Saved')) {
+      setState(() => _f = _load());
+      widget.onChanged();
+    }
+  }
 
   Widget _attendance(List<Attendance> answers, Set<String> members) {
     final byMode = <String, List<String>>{'offline': [], 'online': [], 'absent': []};
@@ -251,7 +361,9 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
               Text('${fmtDateTime(m.startsAt)} · ${m.location ?? ''} · input closes ${fmtDate(m.inputDeadline)}'),
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                if (m.inputRequested)
+                if (m.isPast)
+                  StatusChip('Held ${fmtDateY(m.startsAt)}', Colors.blueGrey)
+                else if (m.inputRequested)
                   StatusChip('Input requested ✓', Colors.green.shade700)
                 else
                   FilledButton.tonal(
@@ -287,7 +399,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                 ),
                 FilledButton.tonalIcon(
                   icon: const Icon(Icons.publish_outlined),
-                  label: const Text('Publish final agenda'),
+                  label: const Text('Add final agenda'),
                   onPressed: () => showNewPostDialog(context, councils: widget.data.councils, meeting: m),
                 ),
                 OutlinedButton.icon(
@@ -314,6 +426,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                     if (await confirm(context, 'Delete meeting?', m.title, ok: 'Delete') &&
                         await runAction(context, () => Repo.deleteMeeting(m.id))) {
                       widget.onChanged();
+                      widget.onDeleted();
                     }
                   },
                 ),
@@ -322,8 +435,14 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
             ),
           ),
           SectionTitle('Attendance',
-              trailing: IconButton(
-                  tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => setState(() => _f = _load()))),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                TextButton.icon(
+                    onPressed: () => _addAttendee(members, answers),
+                    icon: const Icon(Icons.person_add_alt),
+                    label: const Text('Add attendee')),
+                IconButton(
+                    tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: () => setState(() => _f = _load())),
+              ])),
           _attendance(answers, members),
           if (noInput.isNotEmpty)
             Padding(
@@ -354,11 +473,18 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
           if (items.isEmpty) const EmptyState('No items yet'),
           for (final a in items)
             Card(
-              child: ListTile(
-                title: Row(children: [Flexible(child: Text(a.title)), const SizedBox(width: 8), StatusChip.agenda(a.status)]),
-                subtitle: Text('${a.details}\n${widget.names[a.userId] ?? ''} · ${a.source} · ${a.studentCount} students'),
-                isThreeLine: true,
-                trailing: Wrap(spacing: 6, children: [
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Flexible(child: Text(a.title, style: Theme.of(context).textTheme.titleSmall)),
+                  const SizedBox(width: 8),
+                  StatusChip.agenda(a.status),
+                ]),
+                const SizedBox(height: 4),
+                Text('${a.details}\n${widget.names[a.userId] ?? ''} · ${a.source} · ${a.studentCount} students'),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, children: [
                   if (a.status != 'included')
                     FilledButton(
                         onPressed: () async {
@@ -375,6 +501,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                           }
                         },
                         child: const Text('Decline')),
+                ]),
                 ]),
               ),
             ),

@@ -55,8 +55,8 @@ class _ChannelsPageState extends State<ChannelsPage> {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Only the Head of Education can post'),
-                subtitle: const Text('Like a moderated Teams channel (e.g. SIEC, Resources)'),
+                title: const Text('Only the Head of Education posts – others comment'),
+                subtitle: const Text('Shown as posts with comments (e.g. SIEC, Resources)'),
                 value: officerOnly,
                 onChanged: (v) => setD(() => officerOnly = v),
               ),
@@ -162,24 +162,37 @@ class ChatView extends StatefulWidget {
   State<ChatView> createState() => _ChatViewState();
 }
 
+/// A chat (everyone writes) or – in channels where only the Head of Education posts – a feed of
+/// her posts with comments from the representatives under each one.
 class _ChatViewState extends State<ChatView> {
   final _text = TextEditingController();
   bool _announcement = false;
   bool _sending = false;
   PlatformFile? _file;
-  Set<String> _read = {};
+  int _seenCount = -1;
+  final _comment = <String, TextEditingController>{};
+  final _expanded = <String>{};
   late final Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id);
 
+  bool get _feed => widget.channel.officerOnly;
+  bool get _canPost => !widget.channel.officerOnly || widget.me.isOfficer;
+
   @override
-  void initState() {
-    super.initState();
-    _announcement = widget.channel.officerOnly;
-    Repo.myReadMessageIds().then((r) {
-      if (mounted) setState(() => _read = r);
-    });
+  void dispose() {
+    _text.dispose();
+    for (final c in _comment.values) {
+      c.dispose();
+    }
+    super.dispose();
   }
 
-  bool get _canPost => !widget.channel.officerOnly || widget.me.isOfficer;
+  /// Representatives: opening the channel (and every new message while it is open) counts as
+  /// having seen the Head of Education's messages.
+  void _markSeen(int count) {
+    if (widget.me.isOfficer || count == _seenCount) return;
+    _seenCount = count;
+    Repo.markChannelRead(widget.channel.id).catchError((_) {});
+  }
 
   Future<void> _send() async {
     final text = _text.text.trim();
@@ -199,6 +212,16 @@ class _ChatViewState extends State<ChatView> {
         _file = null;
       }
     });
+  }
+
+  Future<void> _sendComment(Message post) async {
+    final c = _comment[post.id];
+    final text = c?.text.trim() ?? '';
+    if (text.isEmpty) return;
+    if (await runAction(context, () => Repo.sendMessage(widget.channel.id, text, parentId: post.id))) {
+      c!.clear();
+      setState(() => _expanded.add(post.id));
+    }
   }
 
   Future<void> _pickFile() async {
@@ -225,7 +248,7 @@ class _ChatViewState extends State<ChatView> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Read by $read of ${rows.length}'),
+        title: Text('Seen by $read of ${rows.length}'),
         content: SizedBox(
           width: 360,
           height: 360,
@@ -236,6 +259,7 @@ class _ChatViewState extends State<ChatView> {
                 leading: Icon(r['read_at'] != null ? Icons.check_circle : Icons.radio_button_unchecked,
                     color: r['read_at'] != null ? Colors.green : Colors.grey),
                 title: Text((r['full_name'] ?? '') as String),
+                subtitle: r['read_at'] == null ? null : Text(fmtDateTime(DateTime.parse(r['read_at'] as String).toLocal())),
               ),
           ]),
         ),
@@ -244,9 +268,126 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
+  /// Author line, text, file and – for the Head of Education's own messages – "Seen by".
+  Widget _content(Message m, {bool showSeen = true}) {
+    final t = Theme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(
+        '${widget.names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}'
+        '${m.isAnnouncement ? ' · announcement' : ''}',
+        style: t.textTheme.labelSmall,
+      ),
+      const SizedBox(height: 4),
+      SelectableText(m.body),
+      if (m.filePath != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: ActionChip(
+            avatar: const Icon(Icons.attach_file, size: 16),
+            label: Text(m.fileName ?? 'File', overflow: TextOverflow.ellipsis),
+            onPressed: () => _openFile(m),
+          ),
+        ),
+      if (showSeen && widget.me.isOfficer && (m.authorId == widget.me.id || m.isAnnouncement))
+        TextButton.icon(
+            onPressed: () => _showReads(m),
+            icon: const Icon(Icons.done_all, size: 16),
+            label: const Text('Seen by…')),
+    ]);
+  }
+
+  Widget _chat(List<Message> msgs) {
+    final t = Theme.of(context);
+    if (msgs.isEmpty) return const EmptyState('No messages yet');
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.all(12),
+      itemCount: msgs.length,
+      itemBuilder: (context, i) {
+        final m = msgs[msgs.length - 1 - i];
+        final mine = m.authorId == widget.me.id;
+        final bg = m.isAnnouncement
+            ? const Color(0xFFFFF6DC)
+            : (mine ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerHighest);
+        return Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+              child: _content(m),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _posts(List<Message> all) {
+    final t = Theme.of(context);
+    final posts = all.where((m) => m.parentId == null).toList().reversed.toList(); // newest first
+    final comments = <String, List<Message>>{};
+    for (final m in all.where((m) => m.parentId != null)) {
+      comments.putIfAbsent(m.parentId!, () => []).add(m);
+    }
+    if (posts.isEmpty) return const EmptyState('No posts yet');
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: posts.length,
+      itemBuilder: (context, i) {
+        final p = posts[i];
+        final list = comments[p.id] ?? const <Message>[];
+        final open = _expanded.contains(p.id);
+        final shown = open || list.length <= 2 ? list : list.sublist(list.length - 2);
+        final c = _comment.putIfAbsent(p.id, () => TextEditingController());
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Card(
+              color: p.isAnnouncement ? const Color(0xFFFFF6DC) : null,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _content(p),
+                  const Divider(),
+                  if (list.length > shown.length)
+                    TextButton(
+                      onPressed: () => setState(() => _expanded.add(p.id)),
+                      child: Text('Show all ${list.length} comments'),
+                    ),
+                  for (final m in shown)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                          color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
+                      child: _content(m, showSeen: false),
+                    ),
+                  Row(children: [
+                    Expanded(
+                      child: TextField(
+                        controller: c,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: const InputDecoration(hintText: 'Write a comment…'),
+                      ),
+                    ),
+                    IconButton(tooltip: 'Send comment', onPressed: () => _sendComment(p), icon: const Icon(Icons.send)),
+                  ]),
+                ]),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context);
     return Column(children: [
       Expanded(
         child: StreamBuilder<List<Message>>(
@@ -255,64 +396,8 @@ class _ChatViewState extends State<ChatView> {
             if (snap.hasError) return ErrorView(error: snap.error!);
             if (!snap.hasData) return const Center(child: CircularProgressIndicator());
             final msgs = snap.data!;
-            if (msgs.isEmpty) return const EmptyState('No messages yet');
-            return ListView.builder(
-              reverse: true,
-              padding: const EdgeInsets.all(12),
-              itemCount: msgs.length,
-              itemBuilder: (context, i) {
-                final m = msgs[msgs.length - 1 - i];
-                final mine = m.authorId == widget.me.id;
-                final bg = m.isAnnouncement
-                    ? const Color(0xFFFFF6DC)
-                    : (mine ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerHighest);
-                return Align(
-                  alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(
-                          '${widget.names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}'
-                          '${m.isAnnouncement ? ' · announcement' : ''}',
-                          style: t.textTheme.labelSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        SelectableText(m.body),
-                        if (m.filePath != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: ActionChip(
-                              avatar: const Icon(Icons.attach_file, size: 16),
-                              label: Text(m.fileName ?? 'File', overflow: TextOverflow.ellipsis),
-                              onPressed: () => _openFile(m),
-                            ),
-                          ),
-                        if (m.isAnnouncement && widget.me.isOfficer)
-                          TextButton.icon(
-                              onPressed: () => _showReads(m),
-                              icon: const Icon(Icons.done_all, size: 16),
-                              label: const Text('Who has read this?')),
-                        if (m.isAnnouncement && !widget.me.isOfficer)
-                          _read.contains(m.id)
-                              ? Text('✓ You confirmed you read this', style: t.textTheme.labelSmall)
-                              : TextButton.icon(
-                                  onPressed: () async {
-                                    if (await runAction(context, () => Repo.markRead(m.id))) {
-                                      setState(() => _read = {..._read, m.id});
-                                    }
-                                  },
-                                  icon: const Icon(Icons.thumb_up_alt_outlined, size: 16),
-                                  label: const Text('Mark as read')),
-                      ]),
-                    ),
-                  ),
-                );
-              },
-            );
+            _markSeen(msgs.length);
+            return _feed ? _posts(msgs) : _chat(msgs.where((m) => m.parentId == null).toList());
           },
         ),
       ),
@@ -327,7 +412,7 @@ class _ChatViewState extends State<ChatView> {
                 contentPadding: EdgeInsets.zero,
                 value: _announcement,
                 onChanged: (v) => setState(() => _announcement = v ?? false),
-                title: const Text('Announcement (push + read confirmation)'),
+                title: const Text('Announcement (highlighted)'),
               ),
             if (_file != null)
               Align(
@@ -345,7 +430,8 @@ class _ChatViewState extends State<ChatView> {
                   controller: _text,
                   minLines: 1,
                   maxLines: 4,
-                  decoration: InputDecoration(hintText: 'Write to ${widget.channel.name}…'),
+                  decoration: InputDecoration(
+                      hintText: _feed ? 'New post in ${widget.channel.name}…' : 'Write to ${widget.channel.name}…'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -355,7 +441,8 @@ class _ChatViewState extends State<ChatView> {
         )
       else
         const Padding(
-            padding: EdgeInsets.all(12), child: Text('Only the Head of Education can post in this channel')),
+            padding: EdgeInsets.all(12),
+            child: Text('Only the Head of Education posts here – you can comment under her posts')),
     ]);
   }
 }

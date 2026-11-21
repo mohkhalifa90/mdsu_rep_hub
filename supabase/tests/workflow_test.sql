@@ -53,6 +53,11 @@ select id, 'CS #3', now() + interval '5 days' from public.councils where name li
 insert into public.meetings (council_id, title, starts_at)
 select id, 'Nursing #2', now() + interval '40 days' from public.councils where name like 'Program council – Nursing%';
 
+-- who attended the past meetings (only attendees log time for a meeting)
+insert into public.meeting_attendance (meeting_id, user_id, mode)
+select id, '00000000-0000-0000-0000-000000000001', 'offline' from public.meetings where title in ('CS #1', 'CS #2');
+insert into public.meeting_attendance (meeting_id, user_id, mode)
+select id, '00000000-0000-0000-0000-000000000003', 'online' from public.meetings where title = 'CS #2';
 
 -- helper: act as a user
 create or replace function pg_temp.as_user(p_name text) returns void language plpgsql as $$
@@ -69,8 +74,8 @@ set role authenticated;
 select from pg_temp.as_user('Lina Berg');
 
 -- 1. Lina logs 60 + 70 minutes (=130 min → 5 started half hours → 325 SEK)
-insert into public.time_entries (work_date, activity, council_id, minutes, description)
-select current_date - 40, 'council_meeting', id, 60, 'CS #1' from public.councils where name like 'Program council – Computer%';
+insert into public.time_entries (work_date, activity, council_id, meeting_id, minutes, description)
+select current_date - 40, 'council_meeting', m.council_id, m.id, 60, 'CS #1' from public.meetings m where m.title = 'CS #1';
 insert into public.time_entries (work_date, activity, council_id, minutes, description)
 select current_date - 39, 'preparation', id, 70, 'Read documents' from public.councils where name like 'Program council – Computer%';
 insert into t select '1 rep sees own hours = 130', (select minutes from public.report_overview) = 130;
@@ -251,7 +256,8 @@ select from pg_temp.as_user('Lina Berg');
 select from public.set_attendance((select id from public.meetings where title='CS #3'), 'absent');
 select from public.set_attendance((select id from public.meetings where title='CS #3'), 'offline');
 insert into t select '12b rep sees only own answer (changed to offline)',
-  (select count(*) from public.meeting_attendance) = 1 and (select mode from public.meeting_attendance) = 'offline';
+  not exists (select 1 from public.meeting_attendance where user_id <> auth.uid())
+  and (select mode from public.meeting_attendance where meeting_id = (select id from public.meetings where title='CS #3')) = 'offline';
 do $$ begin
   insert into public.meeting_attendance (meeting_id, user_id, mode)
   select id, '00000000-0000-0000-0000-000000000003', 'absent' from public.meetings where title='CS #1';
@@ -314,6 +320,50 @@ exception when others then insert into t values ('14e rep cannot post', true); e
 select from pg_temp.as_user('Omar Haddad');
 insert into t select '14f other council sees only the post for all', (select count(*) from public.posts) = 1
   and not exists (select 1 from public.notifications where title = 'From the Head of Education: CS only');
+
+-- 15. Phase 5: comments in post channels, seen-by, attendance decides who logs time
+select from pg_temp.as_user('Lina Berg');
+insert into public.messages (channel_id, body, parent_id)
+select channel_id, 'Thanks, noted', id from public.messages where body = 'Reports due 17 Jan';
+insert into t select '15 rep can comment on a post in SIEC', exists (select 1 from public.messages where body = 'Thanks, noted');
+do $$ begin
+  insert into public.messages (channel_id, body, parent_id)
+  select channel_id, 'reply to reply', id from public.messages where body = 'Thanks, noted';
+  insert into t values ('15b no comments on comments', false);
+exception when others then insert into t values ('15b no comments on comments', true); end $$;
+select from pg_temp.as_user('Ahmed Saleh');
+select public.mark_channel_read((select id from public.channels where name = 'Allmänt')) as seen \gset
+insert into t select '15c opening a channel marks the Head of Education''s messages as seen', :seen = 1;
+select from pg_temp.as_user('Head of Education');
+insert into t select '15d officer told about the comment',
+  exists (select 1 from public.notifications where title = 'New comment in SIEC' and body = 'Thanks, noted');
+insert into t select '15e seen-by works for ordinary messages',
+  (select count(*) from public.announcement_reads((select id from public.messages where body = 'Remember the SIEC meeting'))
+    where read_at is not null) = 1;
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  perform public.set_attendance((select id from public.meetings where title='CS #1'), 'offline');
+  insert into t values ('15f rep cannot sign up after the meeting started', false);
+exception when others then insert into t values ('15f rep cannot sign up after the meeting started', sqlerrm like '%has started%'); end $$;
+do $$ begin
+  insert into public.time_entries (work_date, activity, meeting_id, minutes)
+  select current_date - 40, 'council_meeting', id, 60 from public.meetings where title = 'CS #1';
+  insert into t values ('15g no time for a meeting you did not attend', false);
+exception when others then insert into t values ('15g no time for a meeting you did not attend', sqlerrm like '%not registered%'); end $$;
+do $$ begin
+  insert into public.time_entries (work_date, activity, minutes) values (current_date, 'council_meeting', 60);
+  insert into t values ('15h council meeting needs the meeting', false);
+exception when others then insert into t values ('15h council meeting needs the meeting', true); end $$;
+select from pg_temp.as_user('Head of Education');
+select public.set_attendance_for((select id from public.meetings where title='CS #1'), '00000000-0000-0000-0000-000000000003', 'offline');
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.time_entries (work_date, activity, meeting_id, minutes)
+select current_date - 40, 'council_meeting', id, 60 from public.meetings where title = 'CS #1';
+insert into t select '15i added by the Head of Education → can log time', exists (select 1 from public.time_entries where meeting_id is not null);
+do $$ begin
+  perform public.set_attendance_for((select id from public.meetings where title='CS #1'), auth.uid(), 'offline');
+  insert into t values ('15j rep cannot add attendees', false);
+exception when others then insert into t values ('15j rep cannot add attendees', true); end $$;
 
 reset role;
 \echo

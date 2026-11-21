@@ -100,7 +100,7 @@ class _RepShellState extends State<RepShell> {
           ChannelsPage(me: d.me),
           MorePage(data: d, onChanged: _reload),
         ];
-        const titles = ['Rep Hub', 'My hours', 'Agenda input', 'Channels', 'More'];
+        const titles = ['Rep Hub', 'My hours', 'Meetings', 'Channels', 'More'];
         return Scaffold(
           appBar: AppBar(
             leading: Padding(padding: const EdgeInsets.all(12), child: Image.asset('assets/logo_symbol.png')),
@@ -117,7 +117,7 @@ class _RepShellState extends State<RepShell> {
             destinations: const [
               NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
               NavigationDestination(icon: Icon(Icons.schedule), label: 'Hours'),
-              NavigationDestination(icon: Icon(Icons.list_alt), label: 'Agenda'),
+              NavigationDestination(icon: Icon(Icons.event_note_outlined), label: 'Meetings'),
               NavigationDestination(icon: Icon(Icons.forum_outlined), label: 'Channels'),
               NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
             ],
@@ -135,9 +135,10 @@ class _HomeData {
   final Set<String> loggedMeetingIds;
   final Set<String> agendaMeetingIds; // meetings with my topics or my "no topics" answer
   final int unreadAnnouncements;
+  final Map<String, String> attendance; // meeting id → offline | online | absent
   final List<Post> posts; // latest from the Head of Education
   _HomeData(this.report, this.meetings, this.loggedMeetingIds, this.agendaMeetingIds, this.unreadAnnouncements,
-      this.posts);
+      this.posts, this.attendance);
 }
 
 class RepHomePage extends StatefulWidget {
@@ -166,6 +167,7 @@ class _RepHomePageState extends State<RepHomePage> {
       {...agenda.where((a) => a.userId == d.me.id).map((a) => a.meetingId), ...await Repo.myNoInput()},
       await Repo.unreadAnnouncements(),
       await Repo.posts(limit: 3),
+      await Repo.myAttendance(),
     );
   }
 
@@ -190,20 +192,26 @@ class _RepHomePageState extends State<RepHomePage> {
           }
           if (h.unreadAnnouncements > 0) {
             todos.add(_todo(context, Icons.campaign_outlined, '${h.unreadAnnouncements} unread announcement(s)',
-                'Confirm you have read them', 'Read', () => widget.goTo(3)));
+                'Open Channels to read them', 'Read', () => widget.goTo(3)));
           }
+          bool attends(Meeting m) => h.attendance[m.id] == 'offline' || h.attendance[m.id] == 'online';
+          // Only meetings you said you attend (or the Head of Education added you to) can be logged
           for (final m in h.meetings.where((m) =>
-              m.isPast && now.difference(m.startsAt).inDays <= 30 && !h.loggedMeetingIds.contains(m.id))) {
+              m.isPast && attends(m) && now.difference(m.startsAt).inDays <= 30 && !h.loggedMeetingIds.contains(m.id))) {
             todos.add(_todo(context, Icons.timer_outlined, 'Log time for ${m.title}',
                 '${fmtDate(m.startsAt)} · upload your notes too', 'Log now', () async {
               await showLogTimeSheet(context, d, meetingId: m.id);
               widget.onChanged();
             }));
           }
-          for (final m in h.meetings.where((m) =>
-              !m.isPast && m.startsAt.difference(now).inDays <= 21 && !h.agendaMeetingIds.contains(m.id))) {
-            todos.add(_todo(context, Icons.record_voice_over_outlined, 'Collect input for ${m.title}',
-                'Send topics by ${fmtDate(m.inputDeadline)}', 'Open', () => widget.openMeeting(m.id)));
+          for (final m in h.meetings.where((m) => !m.isPast && m.startsAt.difference(now).inDays <= 21)) {
+            if (h.attendance[m.id] == null) {
+              todos.add(_todo(context, Icons.how_to_reg_outlined, 'Will you attend ${m.title}?',
+                  '${fmtDateTime(m.startsAt)} · in the room, online or not', 'Answer', () => widget.openMeeting(m.id)));
+            } else if (attends(m) && !h.agendaMeetingIds.contains(m.id)) {
+              todos.add(_todo(context, Icons.record_voice_over_outlined, 'Collect input for ${m.title}',
+                  'Send topics by ${fmtDate(m.inputDeadline)}', 'Open', () => widget.openMeeting(m.id)));
+            }
           }
           final upcoming = h.meetings.where((m) => !m.isPast).take(4).toList();
 

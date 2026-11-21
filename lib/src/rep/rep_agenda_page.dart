@@ -8,7 +8,8 @@ import '../shared/attendance_picker.dart';
 import '../shared/widgets.dart';
 import 'rep_shell.dart';
 
-/// Reps send agenda topics before each meeting and say how they attend.
+/// Meetings: reps say how they attend and send topics before each meeting, and can look
+/// back at every earlier meeting (final agenda, their attendance, their topics).
 class RepAgendaPage extends StatefulWidget {
   final RepData data;
   final String? openMeetingId;
@@ -40,6 +41,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
     final all = await Repo.meetings();
     return _AgendaData(
       all.where((m) => !m.isPast).toList(),
+      all.where((m) => m.isPast).toList().reversed.toList(),
       await Repo.agendaItems(),
       await Repo.myAttendance(),
       await Repo.myNoInput(),
@@ -54,6 +56,16 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
       future: _f,
       onRetry: _reload,
       builder: (context, d) {
+        final past = d.past.where((m) => m.id == _open).toList();
+        if (past.isNotEmpty) {
+          return _PastMeeting(
+            meeting: past.first,
+            data: widget.data,
+            myItems: d.items.where((a) => a.meetingId == past.first.id).toList(),
+            attendance: d.attendance[past.first.id],
+            onBack: () => setState(() => _open = null),
+          );
+        }
         final open = d.upcoming.where((m) => m.id == _open).toList();
         if (open.isNotEmpty) {
           return _MeetingInput(
@@ -66,8 +78,8 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
             onChanged: _reload,
           );
         }
-        if (d.upcoming.isEmpty) return const EmptyState('No upcoming meetings in your councils');
         return ListView(padding: const EdgeInsets.all(16), children: [
+          if (d.upcoming.isEmpty) const EmptyState('No upcoming meetings in your councils'),
           Text('Send topics before each meeting and say how you will attend. Ask your classmates as early as you can.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
@@ -93,18 +105,80 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
                 onTap: () => setState(() => _open = m.id),
               ),
             ),
+          if (d.past.isNotEmpty) ...[
+            const SectionTitle('Earlier meetings'),
+            for (final m in d.past)
+              Card(
+                child: ListTile(
+                  title: Text(m.title),
+                  subtitle: Text('${fmtDateY(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
+                  trailing: StatusChip(
+                      d.attendance[m.id] == null ? 'No answer' : (attendanceLabels[d.attendance[m.id]] ?? ''),
+                      Colors.blueGrey),
+                  onTap: () => setState(() => _open = m.id),
+                ),
+              ),
+          ],
         ]);
       },
     );
   }
 }
 
+/// An earlier meeting: final agenda, how you attended and the topics you sent.
+class _PastMeeting extends StatelessWidget {
+  final Meeting meeting;
+  final RepData data;
+  final List<AgendaItem> myItems;
+  final String? attendance;
+  final VoidCallback onBack;
+  const _PastMeeting(
+      {required this.meeting, required this.data, required this.myItems, required this.attendance, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = meeting;
+    final attended = attendance == 'offline' || attendance == 'online';
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(onPressed: onBack, icon: const Icon(Icons.arrow_back), label: const Text('Back')),
+      ),
+      Text(m.title, style: Theme.of(context).textTheme.titleLarge),
+      Text('${fmtDateTime(m.startsAt)} · ${data.council(m.councilId)?.name ?? ''}'),
+      if (m.location != null && m.location!.isNotEmpty) Text(m.location!),
+      FutureBuilder<Post?>(
+        future: Repo.finalAgenda(m.id),
+        builder: (context, s) => s.data == null
+            ? const SizedBox.shrink()
+            : Padding(padding: const EdgeInsets.only(top: 12), child: PostCard(post: s.data!)),
+      ),
+      const SectionTitle('Your attendance'),
+      Card(
+        child: ListTile(
+          leading: Icon(attended ? Icons.check_circle : Icons.info_outline,
+              color: attended ? Colors.green.shade700 : Colors.grey),
+          title: Text(attendance == null ? 'You did not answer' : (attendanceLabels[attendance] ?? '')),
+          subtitle: Text(attended
+              ? 'You can log time for this meeting.'
+              : 'Were you there anyway? Ask the Head of Education to add you, then you can log your time.'),
+        ),
+      ),
+      const SectionTitle('Topics you sent'),
+      if (myItems.isEmpty) const EmptyState('No topics'),
+      for (final a in myItems)
+        Card(child: ListTile(title: Text(a.title), subtitle: Text(a.details), trailing: StatusChip.agenda(a.status))),
+    ]);
+  }
+}
+
 class _AgendaData {
   final List<Meeting> upcoming;
+  final List<Meeting> past;
   final List<AgendaItem> items;
   final Map<String, String> attendance;
   final Set<String> noInput;
-  _AgendaData(this.upcoming, this.items, this.attendance, this.noInput);
+  _AgendaData(this.upcoming, this.past, this.items, this.attendance, this.noInput);
 }
 
 class _MeetingInput extends StatefulWidget {

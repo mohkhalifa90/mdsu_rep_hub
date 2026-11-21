@@ -22,7 +22,7 @@ class _Today {
 /// and the latest posts. The numbers live on the Statistics page.
 class TodayPage extends StatefulWidget {
   final OfficerData data;
-  final void Function(String page) goTo;
+  final void Function(String page) goTo; // a page key, or agenda/<meeting id>
   const TodayPage({super.key, required this.data, required this.goTo});
   @override
   State<TodayPage> createState() => _TodayPageState();
@@ -96,10 +96,10 @@ class _TodayPageState extends State<TodayPage> {
           for (final m in soon)
             _Todo(Icons.record_voice_over_outlined, Colors.blue.shade700,
                 'Ask for topics: ${m.title}', '${fmtDateTime(m.startsAt)} · reps have not been asked yet.',
-                'Open', () => widget.goTo('agenda')),
+                'Open', () => widget.goTo('agenda/${m.id}')),
           if (newItems > 0)
             _Todo(Icons.inbox_outlined, Colors.blue.shade700, '$newItems new topics from reps',
-                'Include or decline them in the Agenda builder.', 'Open', () => widget.goTo('agenda')),
+                'Include or decline them in Meetings.', 'Open', () => widget.goTo('agenda')),
           if (waiting > 0)
             _Todo(Icons.person_add_alt, Colors.teal.shade700, '$waiting accounts not active',
                 'New sign-ups wait here until you switch them on.', 'Open', () => widget.goTo('reps')),
@@ -209,7 +209,7 @@ class _TodayPageState extends State<TodayPage> {
         ]),
       ]),
       trailing: const Icon(Icons.chevron_right),
-      onTap: () => widget.goTo('agenda'),
+      onTap: () => widget.goTo('agenda/${m.id}'),
     );
   }
 }

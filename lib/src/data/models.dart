@@ -318,6 +318,7 @@ class Message {
   final DateTime createdAt;
   final String? filePath;
   final String? fileName;
+  final String? parentId; // set = a comment under a post
   Message.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         channelId = m['channel_id'] as String,
@@ -326,7 +327,8 @@ class Message {
         isAnnouncement = (m['is_announcement'] ?? false) as bool,
         createdAt = _dt(m['created_at']),
         filePath = m['file_path'] as String?,
-        fileName = m['file_name'] as String?;
+        fileName = m['file_name'] as String?,
+        parentId = m['parent_id'] as String?;
 }
 
 class TutoringPost {
