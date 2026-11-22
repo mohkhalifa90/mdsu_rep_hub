@@ -394,6 +394,45 @@ exception when others then insert into t values ('16e rep cannot read invites', 
 reset role;
 insert into t select '16f sign-up still open', public.signup_open();
 
+-- 17. Phase 4: roster, seats, sign-ups
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into t select '17 existing memberships are on the roster',
+  not exists (select 1 from public.council_members cm join public.profiles p on p.id = cm.user_id
+              where p.email like '%@%'
+                and not exists (select 1 from public.roster r where r.council_id = cm.council_id and r.email = lower(p.email)));
+insert into public.councils (name, type, city, study_mode, intake, length_years, director_name)
+values ('Ekonomprogrammet · ESK · Campus', 'program', 'ESK', 'campus', 'HT', 3, 'M. Holmstedt');
+insert into public.roster (council_id, email, cohort)
+select id, 'future.rep@student.mdu.se', 'HT2026' from public.councils where name = 'Ekonomprogrammet · ESK · Campus';
+insert into auth.users (email, raw_user_meta_data) values ('Future.Rep@student.mdu.se', '{"full_name":"Future Rep"}');
+insert into t select '17b signing up with a roster email joins the council (email case ignored)',
+  exists (select 1 from public.council_members cm join public.profiles p on p.id = cm.user_id
+          join public.councils c on c.id = cm.council_id
+          where p.full_name = 'Future Rep' and c.name = 'Ekonomprogrammet · ESK · Campus');
+insert into t select '17c officer told about the sign-up',
+  exists (select 1 from public.notifications n join public.profiles o on o.id = n.user_id
+          where o.role = 'officer' and n.title = 'New sign-up: Future Rep');
+insert into t select '17d new sign-up is waiting', (select approval from public.profiles where full_name = 'Future Rep') = 'waiting';
+update public.profiles set active = true where full_name = 'Future Rep';
+insert into t select '17e switching on approves', (select approval from public.profiles where full_name = 'Future Rep') = 'approved';
+delete from public.council_members where user_id = (select id from public.profiles where full_name = 'Future Rep');
+insert into t select '17f leaving the council removes the roster row', not exists (select 1 from public.roster where email = 'future.rep@student.mdu.se');
+insert into public.council_members (council_id, user_id)
+select c.id, p.id from public.councils c, public.profiles p where c.name = 'Ekonomprogrammet · ESK · Campus' and p.full_name = 'Future Rep';
+insert into t select '17g adding to a council adds a roster row', exists (select 1 from public.roster where email = 'future.rep@student.mdu.se');
+set role authenticated;
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '17h rep sees only own roster rows', not exists (select 1 from public.roster where email = 'future.rep@student.mdu.se');
+do $$ begin
+  update public.profiles set approval = 'rejected' where id = auth.uid();
+  insert into t values ('17i rep cannot change approval', false);
+exception when others then insert into t values ('17i rep cannot change approval', true); end $$;
+do $$ begin
+  insert into public.roster (council_id, email) select id, 'x@student.mdu.se' from public.councils limit 1;
+  insert into t values ('17j rep cannot edit the roster', false);
+exception when others then insert into t values ('17j rep cannot edit the roster', true); end $$;
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

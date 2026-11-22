@@ -94,6 +94,27 @@ class RepsPage extends StatefulWidget {
 class _RepsPageState extends State<RepsPage> {
   late Future<List<Profile>> _f = Repo.profiles();
   void _reload() => setState(() => _f = Repo.profiles());
+  final _search = TextEditingController();
+  String _filter = 'all'; // all | active | waiting | inactive
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _decide(Profile p, bool approve) async {
+    if (await runAction(
+        context,
+        () => Repo.updateProfile(p.id, approve ? {'active': true} : {'approval': 'rejected'}),
+        success: approve ? '${p.fullName} approved – set program and councils next' : '${p.fullName} rejected')) {
+      _reload();
+      if (approve && mounted) {
+        final fresh = (await Repo.profiles()).where((x) => x.id == p.id).toList();
+        if (fresh.isNotEmpty && mounted) _edit(fresh.first);
+      }
+    }
+  }
 
   Future<void> _edit(Profile p) async {
     final d = widget.data;
@@ -279,6 +300,81 @@ class _RepsPageState extends State<RepsPage> {
     }
   }
 
+  List<Profile> _shown(List<Profile> people) {
+    final q = _search.text.trim().toLowerCase();
+    return people.where((p) {
+      final ok = switch (_filter) {
+        'active' => p.active,
+        'waiting' => p.waitingForApproval,
+        'inactive' => !p.active && !p.waitingForApproval,
+        _ => true,
+      };
+      if (!ok) return false;
+      if (q.isEmpty) return true;
+      return '${p.fullName} ${p.email ?? ''} ${p.program ?? ''}'.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  Widget _filters(List<Profile> people) {
+    final n = {
+      'all': people.length,
+      'active': people.where((p) => p.active).length,
+      'waiting': people.where((p) => p.waitingForApproval).length,
+      'inactive': people.where((p) => !p.active && !p.waitingForApproval).length,
+    };
+    const labels = {'all': 'All', 'active': 'Active', 'waiting': 'Waiting for approval', 'inactive': 'Inactive'};
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        SizedBox(
+          width: 300,
+          child: TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              hintText: 'Search name, email or program',
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _search.clear())),
+            ),
+          ),
+        ),
+        for (final e in labels.entries)
+          ChoiceChip(
+            label: Text('${e.value} (${n[e.key]})'),
+            selected: _filter == e.key,
+            onSelected: (_) => setState(() => _filter = e.key),
+          ),
+      ]),
+    );
+  }
+
+  /// New sign-ups first, with Approve / Reject
+  List<Widget> _waiting(List<Profile> people) {
+    final w = people.where((p) => p.waitingForApproval).toList();
+    if (w.isEmpty) return const [];
+    return [
+      SectionTitle('Waiting for approval (${w.length})'),
+      Card(
+        color: Colors.orange.shade50,
+        child: Column(children: [
+          for (final p in w)
+            ListTile(
+              leading: const Icon(Icons.person_add_alt),
+              title: Text(p.fullName),
+              subtitle: Text('${p.email ?? ''}${p.createdAt == null ? '' : ' · signed up ${fmtDate(p.createdAt!)}'}'),
+              trailing: Wrap(spacing: 4, children: [
+                TextButton(onPressed: () => _decide(p, false), child: const Text('Reject')),
+                FilledButton(onPressed: () => _decide(p, true), child: const Text('Approve')),
+              ]),
+            ),
+        ]),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) => Loader<List<Profile>>(
         future: _f,
@@ -300,6 +396,8 @@ class _RepsPageState extends State<RepsPage> {
               ),
             ),
           ),
+          ..._waiting(people),
+          _filters(people),
           Card(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -307,6 +405,7 @@ class _RepsPageState extends State<RepsPage> {
                 showCheckboxColumn: false,
                 columns: const [
                   DataColumn(label: Text('Name')),
+                  DataColumn(label: Text('Email')),
                   DataColumn(label: Text('Program')),
                   DataColumn(label: Text('Year')),
                   DataColumn(label: Text('Role')),
@@ -315,12 +414,23 @@ class _RepsPageState extends State<RepsPage> {
                   DataColumn(label: Text('Successor task')),
                 ],
                 rows: [
-                  for (final p in people)
+                  for (final p in _shown(people))
                     DataRow(
                       onSelectChanged: (_) => _edit(p),
                       color: p.active ? null : WidgetStatePropertyAll(Colors.grey.shade200),
                       cells: [
-                        DataCell(Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName)),
+                        DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
+                          if (p.waitingForApproval) ...[
+                            const SizedBox(width: 6),
+                            StatusChip('Waiting', Colors.orange.shade800),
+                          ],
+                          if (p.approval == 'rejected') ...[
+                            const SizedBox(width: 6),
+                            StatusChip('Rejected', Colors.grey),
+                          ],
+                        ])),
+                        DataCell(Text(p.email ?? '')),
                         DataCell(Text('${p.program ?? ''} ${p.academy == null ? '' : '· ${p.academy}'}')),
                         DataCell(Text('${p.studyYear ?? '-'}')),
                         DataCell(Text(p.role)),

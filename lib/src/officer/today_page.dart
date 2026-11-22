@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../data/roster.dart';
 import '../shared/format.dart';
 import '../shared/posts.dart';
 import '../shared/widgets.dart';
@@ -15,7 +16,8 @@ class _Today {
   final List<Attendance> attendance;
   final List<Profile> people;
   final List<Post> posts;
-  _Today(this.reports, this.meetings, this.issues, this.agenda, this.attendance, this.people, this.posts);
+  final List<RosterEntry> roster;
+  _Today(this.reports, this.meetings, this.issues, this.agenda, this.attendance, this.people, this.posts, this.roster);
 }
 
 /// The officer's start page: what needs attention today, quick actions, next meetings
@@ -38,6 +40,7 @@ class _TodayPageState extends State<TodayPage> {
         await Repo.attendance(),
         await Repo.profiles(),
         await Repo.posts(limit: 3),
+        await Repo.roster(),
       );
   void _reload() => setState(() => _f = _load());
 
@@ -74,7 +77,13 @@ class _TodayPageState extends State<TodayPage> {
         final upcomingIds = {for (final m in upcoming) m.id};
         final notSubmitted = o.reports.where((r) => !r.isDone).length;
         final toReview = o.reports.where((r) => r.status == 'submitted').length;
-        final waiting = o.people.where((p) => !p.active).length;
+        final waitingList = o.people.where((p) => p.waitingForApproval).toList();
+        final plans = [
+          for (final c in widget.data.councils.where((c) => !c.isSiec && !c.cancelled)) SeatPlan(c, o.roster)
+        ];
+        final vacant = plans.fold<int>(0, (a, p) => a + p.vacant);
+        final finished = plans.fold<int>(0, (a, p) => a + p.finished.length);
+        final seatsTotal = plans.fold<int>(0, (a, p) => a + p.seats);
         final escalated = o.issues.where((i) => i.status == 'escalated').length;
         final newItems = o.agenda.where((a) => a.status == 'new' && upcomingIds.contains(a.meetingId)).length;
         final soon = upcoming
@@ -100,9 +109,13 @@ class _TodayPageState extends State<TodayPage> {
           if (newItems > 0)
             _Todo(Icons.inbox_outlined, Colors.blue.shade700, '$newItems new topics from reps',
                 'Include or decline them in Meetings.', 'Open', () => widget.goTo('agenda')),
-          if (waiting > 0)
-            _Todo(Icons.person_add_alt, Colors.teal.shade700, '$waiting accounts not active',
-                'New sign-ups wait here until you switch them on.', 'Open', () => widget.goTo('reps')),
+          if (finished > 0)
+            _Todo(Icons.school_outlined, Colors.blueGrey, '$finished representatives finished their programme',
+                'Remove them from their programme seats so the seats show as vacant.', 'Open',
+                () => widget.goTo('programmes')),
+          if (seatsTotal > 0 && vacant > 0)
+            _Todo(Icons.event_seat_outlined, Colors.teal.shade700, '$vacant vacant seats of $seatsTotal',
+                'Programmes and councils that need representatives.', 'Open', () => widget.goTo('programmes')),
         ];
 
         final actions = Wrap(spacing: 8, runSpacing: 8, children: [
@@ -123,6 +136,44 @@ class _TodayPageState extends State<TodayPage> {
               icon: const Icon(Icons.notifications_active_outlined),
               label: const Text('Remind unsubmitted')),
         ]);
+
+        final approvals = waitingList.isEmpty
+            ? const SizedBox.shrink()
+            : Card(
+                color: Colors.orange.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SectionTitle('Waiting for approval (${waitingList.length})',
+                        trailing: TextButton(onPressed: () => widget.goTo('reps'), child: const Text('All'))),
+                    for (final p in waitingList.take(5))
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.person_add_alt),
+                        title: Text(p.fullName),
+                        subtitle: Text(p.email ?? ''),
+                        trailing: Wrap(spacing: 4, children: [
+                          TextButton(
+                              onPressed: () async {
+                                if (await runAction(context, () => Repo.updateProfile(p.id, {'approval': 'rejected'}),
+                                    success: '${p.fullName} rejected')) {
+                                  _reload();
+                                }
+                              },
+                              child: const Text('Reject')),
+                          FilledButton(
+                              onPressed: () async {
+                                if (await runAction(context, () => Repo.updateProfile(p.id, {'active': true}),
+                                    success: '${p.fullName} approved – set program and councils under Representatives')) {
+                                  _reload();
+                                }
+                              },
+                              child: const Text('Approve')),
+                        ]),
+                      ),
+                  ]),
+                ),
+              );
 
         final attention = Card(
           child: Padding(
@@ -170,9 +221,9 @@ class _TodayPageState extends State<TodayPage> {
             actions,
             const SizedBox(height: 16),
             LayoutBuilder(builder: (context, c) {
-              if (c.maxWidth < 900) return Column(children: [attention, meetings, posts]);
+              if (c.maxWidth < 900) return Column(children: [approvals, attention, meetings, posts]);
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(child: Column(children: [attention, posts])),
+                Expanded(child: Column(children: [approvals, attention, posts])),
                 const SizedBox(width: 12),
                 Expanded(child: meetings),
               ]);

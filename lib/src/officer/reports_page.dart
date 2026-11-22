@@ -119,9 +119,9 @@ class _ReportsPageState extends State<ReportsPage> {
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
             Kpi(label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
-            Kpi(label: 'Hours in submitted reports',
+            Kpi(label: 'Hours submitted',
                 value: '${fmtHours(submitted.fold<int>(0, (a, r) => a + r.minutes))} h'),
-            Kpi(label: 'Amount in submitted reports', value: sek(submitted.fold<int>(0, (a, r) => a + r.amount))),
+            Kpi(label: 'Amount submitted', value: sek(submitted.fold<int>(0, (a, r) => a + r.amount))),
           ]),
           const SizedBox(height: 12),
           Card(
@@ -203,6 +203,16 @@ class _ReportDetail extends StatelessWidget {
               if (row.status == 'approved')
                 FilledButton(onPressed: () => onReview(row, 'paid'), child: const Text('Mark as paid')),
             ]),
+            if (row.status == 'draft' || row.status == 'returned')
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                    row.status == 'draft'
+                        ? 'Draft – the representative is still logging hours. You can follow along here; '
+                            'nothing to do until they press Submit.'
+                        : 'Returned – waiting for the representative to fix it and submit again.',
+                    style: TextStyle(color: Colors.blueGrey.shade700)),
+              ),
             if (!row.isMember)
               const Text('Not a union member – hours are recorded but not paid (Handbook §5).',
                   style: TextStyle(color: Colors.red)),

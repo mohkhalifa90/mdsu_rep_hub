@@ -8,7 +8,7 @@ import 'officer_shell.dart';
 const _typeLabels = {
   'program': 'Program council',
   'academy': 'Academy council',
-  'general': 'General council',
+  'general': 'Central council',
   'siec': 'SIEC',
 };
 const _academies = ['EST', 'HVV', 'IDT', 'UKK'];

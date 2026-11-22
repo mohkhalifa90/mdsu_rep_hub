@@ -17,6 +17,8 @@ class Profile {
   final bool shareContact;
   final bool active;
   final bool mustChangePassword; // got a temporary password from the Head of Education
+  final String approval; // waiting | approved | rejected
+  final DateTime? createdAt;
 
   Profile.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -30,7 +32,12 @@ class Profile {
         quizPassed = (m['quiz_passed'] ?? false) as bool,
         shareContact = (m['share_contact'] ?? false) as bool,
         active = (m['active'] ?? true) as bool,
-        mustChangePassword = (m['must_change_password'] ?? false) as bool;
+        mustChangePassword = (m['must_change_password'] ?? false) as bool,
+        approval = (m['approval'] ?? 'approved') as String,
+        createdAt = m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal();
+
+  /// A new sign-up the Head of Education has not decided on yet
+  bool get waitingForApproval => !active && approval == 'waiting';
 
   bool get isOfficer => role == 'officer' || role == 'admin';
   String get initials {
@@ -72,12 +79,49 @@ class Council {
   final String name;
   final String type;
   final String? academy;
+  // programme details (programme councils)
+  final String? city; // ESK | VÄS
+  final String? studyMode; // campus | distans
+  final String? intake; // HT | VT | HT_VT
+  final double? lengthYears;
+  final int? seats; // set by hand; null = worked out from intake and length
+  final String? directorName;
+  final String? directorEmail;
+  final String? institution;
+  final bool cancelled;
+  final String? notes;
   Council.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         name = m['name'] as String,
         type = m['type'] as String,
-        academy = m['academy'] as String?;
+        academy = m['academy'] as String?,
+        city = m['city'] as String?,
+        studyMode = m['study_mode'] as String?,
+        intake = m['intake'] as String?,
+        lengthYears = (m['length_years'] as num?)?.toDouble(),
+        seats = m['seats'] as int?,
+        directorName = m['director_name'] as String?,
+        directorEmail = m['director_email'] as String?,
+        institution = m['institution'] as String?,
+        cancelled = (m['cancelled'] ?? false) as bool,
+        notes = m['notes'] as String?;
   bool get isSiec => type == 'siec';
+  bool get isProgramme => type == 'program';
+}
+
+/// One representative (by email) on a council; for programmes also their cohort, e.g. HT2025.
+class RosterEntry {
+  final String id;
+  final String councilId;
+  final String email;
+  final String? cohort;
+  final String? note;
+  RosterEntry.fromMap(Map<String, dynamic> m)
+      : id = m['id'] as String,
+        councilId = m['council_id'] as String,
+        email = m['email'] as String,
+        cohort = m['cohort'] as String?,
+        note = m['note'] as String?;
 }
 
 /// Councils with how many reps and meetings each has (officer Councils page).

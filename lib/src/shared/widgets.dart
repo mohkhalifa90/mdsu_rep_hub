@@ -157,7 +157,8 @@ class Kpi extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
+              // one line, so all cards in a row line up
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 4),
               Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
               if (sub != null) Text(sub!, style: Theme.of(context).textTheme.bodySmall),

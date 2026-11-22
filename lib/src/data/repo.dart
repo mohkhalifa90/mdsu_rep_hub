@@ -132,6 +132,33 @@ class Repo {
 
   static Future<void> deleteCouncil(String id) => sb.from('councils').delete().eq('id', id);
 
+  /// Programme details (city, intake, length, seats, director …). Returns the id.
+  static Future<String> saveCouncil(String? id, Map<String, dynamic> values) async {
+    if (id == null) {
+      final row = await sb.from('councils').insert(values).select('id').single();
+      return row['id'] as String;
+    }
+    await sb.from('councils').update(values).eq('id', id);
+    return id;
+  }
+
+  static Future<List<RosterEntry>> roster() async =>
+      _list(await sb.from('roster').select().order('cohort'), RosterEntry.fromMap);
+
+  static Future<void> addToRoster(String councilId, String email, {String? cohort, String? note}) =>
+      sb.from('roster').insert({
+        'council_id': councilId,
+        'email': email.trim().toLowerCase(),
+        'cohort': cohort,
+        'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
+      });
+
+  static Future<void> updateRoster(String id, {String? cohort, String? note}) => sb
+      .from('roster')
+      .update({'cohort': cohort, 'note': (note == null || note.trim().isEmpty) ? null : note.trim()}).eq('id', id);
+
+  static Future<void> removeFromRoster(String id) => sb.from('roster').delete().eq('id', id);
+
   /// Council ids the user belongs to (SIEC always included).
   static Future<Set<String>> councilIdsOf(String userId) async {
     final rows = await sb.from('council_members').select('council_id').eq('user_id', userId);
@@ -487,10 +514,18 @@ class Repo {
   static Future<void> updateProfile(String id, Map<String, dynamic> values) =>
       sb.from('profiles').update(values).eq('id', id);
 
+  /// Only the changes are written, so roster details (cohort, note) of kept councils stay.
   static Future<void> setCouncils(String userId, Set<String> councilIds) async {
-    await sb.from('council_members').delete().eq('user_id', userId);
-    if (councilIds.isNotEmpty) {
-      await sb.from('council_members').insert([for (final c in councilIds) {'council_id': c, 'user_id': userId}]);
+    final now = {
+      for (final r in await sb.from('council_members').select('council_id').eq('user_id', userId) as List)
+        r['council_id'] as String
+    };
+    final gone = now.difference(councilIds), added = councilIds.difference(now);
+    if (gone.isNotEmpty) {
+      await sb.from('council_members').delete().eq('user_id', userId).inFilter('council_id', gone.toList());
+    }
+    if (added.isNotEmpty) {
+      await sb.from('council_members').insert([for (final c in added) {'council_id': c, 'user_id': userId}]);
     }
   }
 

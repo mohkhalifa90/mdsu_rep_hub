@@ -192,9 +192,12 @@ class _PendingApproval extends StatelessWidget {
               const SizedBox(height: 12),
               Text('Welcome, ${me.fullName}!', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              const Text(
-                'Your account is waiting for approval by the Head of Education.\n'
-                'You will get access as soon as you are appointed as a student representative.',
+              Text(
+                me.approval == 'rejected'
+                    ? 'Your account was not approved. If you think this is a mistake, contact the Head of '
+                        'Education at utbildning@mdsu.se.'
+                    : 'Your account is waiting for approval by the Head of Education.\n'
+                        'You will get access as soon as you are appointed as a student representative.',
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
