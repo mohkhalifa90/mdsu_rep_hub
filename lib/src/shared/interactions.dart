@@ -116,16 +116,28 @@ class ReactionBar extends StatelessWidget {
     }
     return Wrap(spacing: 4, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
       for (final e in groups.entries)
-        Tooltip(
-          message: e.value.map((u) => names[u] ?? '').join(', '),
-          child: ChoiceChip(
-            visualDensity: VisualDensity.compact,
-            showCheckmark: false,
-            label: Text('${e.key} ${e.value.length}'),
-            selected: e.value.contains(meId),
-            onSelected: (on) => _go(context, e.key, on),
-          ),
-        ),
+        Builder(builder: (context) {
+          final mine = e.value.contains(meId);
+          return Tooltip(
+            // who reacted, e.g. "Dania Khamis, Salma"
+            message: e.value.map((u) => u == meId ? 'You' : (names[u] ?? '')).join(', '),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _go(context, e.key, !mine),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  // yours: coloured with a border; other people's: plain grey
+                  color: mine ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: mine ? t.colorScheme.primary : Colors.transparent, width: 1.5),
+                ),
+                child: Text('${e.key} ${e.value.length}',
+                    style: TextStyle(fontWeight: mine ? FontWeight.w700 : FontWeight.normal)),
+              ),
+            ),
+          );
+        }),
       PopupMenuButton<String>(
         tooltip: 'React',
         icon: Icon(Icons.add_reaction_outlined, size: 18, color: t.colorScheme.onSurfaceVariant),
