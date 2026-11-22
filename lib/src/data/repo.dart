@@ -493,7 +493,7 @@ class Repo {
   /// All reactions I can see (live)
   static Stream<List<Reaction>> reactionStream() => sb
       .from('message_reactions')
-      .stream(primaryKey: ['message_id', 'user_id', 'emoji'])
+      .stream(primaryKey: ['message_id', 'user_id']) // same key as the table, so removed reactions disappear live
       .map((rows) => rows.map(Reaction.fromMap).toList());
 
   /// One reaction per person: a new emoji replaces the old one; off removes it.
@@ -549,7 +549,7 @@ class Repo {
 
   static Stream<List<ItemReaction>> itemReactions() => sb
       .from('item_reactions')
-      .stream(primaryKey: ['kind', 'item_id', 'user_id', 'emoji'])
+      .stream(primaryKey: ['kind', 'item_id', 'user_id']) // same key as the table
       .map((rows) => rows.map(ItemReaction.fromMap).toList());
 
   static Future<void> addItemComment(String kind, String itemId, String body, {List<String> mentions = const []}) =>
