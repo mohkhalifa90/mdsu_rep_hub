@@ -5,6 +5,7 @@ import '../data/repo.dart';
 import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
+import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'rep_shell.dart';
 
@@ -46,6 +47,12 @@ class MorePage extends StatelessWidget {
           leading: const Icon(Icons.person_outline),
           title: const Text('My profile & payment details'),
           onTap: () => _push(context, 'My profile', ProfilePage(data: data, onChanged: onChanged)),
+        ),
+        ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Appearance'),
+          subtitle: const Text('Light or dark, colour and banner'),
+          onTap: () => showAppearanceSheet(context),
         ),
         ListTile(
           leading: const Icon(Icons.menu_book_outlined),

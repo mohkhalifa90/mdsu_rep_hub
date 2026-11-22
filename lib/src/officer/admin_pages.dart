@@ -5,6 +5,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
+import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'officer_shell.dart';
 
@@ -275,7 +276,8 @@ class _RepsPageState extends State<RepsPage> {
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(8)),
                 child: SelectableText(message),
               ),
               const SizedBox(height: 8),
@@ -358,7 +360,7 @@ class _RepsPageState extends State<RepsPage> {
     return [
       SectionTitle('Waiting for approval (${w.length})'),
       Card(
-        color: Colors.orange.shade50,
+        color: Color.alphaBlend(softBg(context, Colors.orange), Theme.of(context).cardColor),
         child: Column(children: [
           for (final p in w)
             ListTile(
@@ -417,7 +419,7 @@ class _RepsPageState extends State<RepsPage> {
                   for (final p in _shown(people))
                     DataRow(
                       onSelectChanged: (_) => _edit(p),
-                      color: p.active ? null : WidgetStatePropertyAll(Colors.grey.shade200),
+                      color: p.active ? null : WidgetStatePropertyAll(Theme.of(context).colorScheme.surfaceContainerHighest),
                       cells: [
                         DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
                           Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
@@ -598,6 +600,16 @@ class _SettingsPageState extends State<SettingsPage> {
             trailing: FilledButton(onPressed: _newSemester, child: const Text('Create semester')),
           ),
         ),
+      const SectionTitle('Appearance'),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Light or dark, colour and banner'),
+          subtitle: const Text('Your own choice – every representative can choose theirs under More → Appearance.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showAppearanceSheet(context),
+        ),
+      ),
       const SectionTitle('Accounts'),
       Card(
         child: SwitchListTile(

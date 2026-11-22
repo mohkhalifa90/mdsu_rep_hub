@@ -436,6 +436,18 @@ class Repo {
     return path;
   }
 
+  /// Appearance (mode, colour, banner) on my profile
+  static Future<void> saveMyPrefs(Map<String, dynamic> prefs) =>
+      sb.from('profiles').update({'ui_prefs': prefs}).eq('id', uid);
+
+  /// My own banner picture → public URL
+  static Future<String> uploadBanner(String fileName, Uint8List bytes) async {
+    final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'jpg';
+    final path = '$uid/banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    await sb.storage.from('banners').uploadBinary(path, bytes);
+    return sb.storage.from('banners').getPublicUrl(path);
+  }
+
   static Future<String> channelFileUrl(String path) => sb.storage.from(channelFilesBucket).createSignedUrl(path, 300);
 
   static Stream<List<Message>> messageStream(String channelId) => sb

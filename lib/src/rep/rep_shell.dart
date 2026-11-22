@@ -7,6 +7,7 @@ import '../push/web_push_card.dart';
 import '../shared/posts.dart';
 import '../shared/channels_page.dart';
 import '../shared/format.dart';
+import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'hours_page.dart';
 import 'more_page.dart';
@@ -215,7 +216,15 @@ class _RepHomePageState extends State<RepHomePage> {
           }
           final upcoming = h.meetings.where((m) => !m.isPast).take(4).toList();
 
+          final first = widget.data.me.fullName.trim().split(' ').first;
           return ListView(padding: const EdgeInsets.all(16), children: [
+            BannerHeader(
+              height: 110,
+              title: first.isEmpty ? 'Hi!' : 'Hi, $first',
+              subtitle: [fmtDateY(DateTime.now()), if (upcoming.isNotEmpty) 'next meeting ${fmtDate(upcoming.first.startsAt)}']
+                  .join(' · '),
+            ),
+            const SizedBox(height: 12),
             Card(
               color: t.colorScheme.primary,
               child: Padding(

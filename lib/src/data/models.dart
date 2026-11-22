@@ -19,6 +19,7 @@ class Profile {
   final bool mustChangePassword; // got a temporary password from the Head of Education
   final String approval; // waiting | approved | rejected
   final DateTime? createdAt;
+  final Map<String, dynamic> uiPrefs; // appearance
 
   Profile.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -34,7 +35,8 @@ class Profile {
         active = (m['active'] ?? true) as bool,
         mustChangePassword = (m['must_change_password'] ?? false) as bool,
         approval = (m['approval'] ?? 'approved') as String,
-        createdAt = m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal();
+        createdAt = m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal(),
+        uiPrefs = (m['ui_prefs'] as Map?)?.cast<String, dynamic>() ?? const {};
 
   /// A new sign-up the Head of Education has not decided on yet
   bool get waitingForApproval => !active && approval == 'waiting';

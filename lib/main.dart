@@ -7,13 +7,12 @@ import 'src/data/repo.dart';
 import 'src/officer/officer_shell.dart';
 import 'src/push/push_service.dart';
 import 'src/rep/rep_shell.dart';
+import 'src/shared/theme.dart';
 import 'src/shared/widgets.dart';
 
 // Pass your project values at build time:
 // flutter run --dart-define=SUPABASE_URL=https://xxxx.supabase.co --dart-define=SUPABASE_ANON_KEY=eyJ...
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const mdsuBlue = Color(0xFF2F5AAE);
-const mdsuLightBlue = Color(0xFF21BBEF);
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 Future<void> main() async {
@@ -30,25 +29,20 @@ class RepHubApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'MDSU Rep Hub',
-      debugShowCheckedModeBanner: false,
-      // 24-hour clock everywhere (time pickers and times), as in Sweden
-      builder: (context, child) =>
-          MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
-      theme: ThemeData(
-        useMaterial3: true,
-        // MDSU colours: blue from mdsu.se, light blue from the logo
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: mdsuBlue,
-          primary: mdsuBlue,
-          secondary: mdsuLightBlue,
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF7F8FB),
-        appBarTheme: const AppBarTheme(backgroundColor: Colors.white, surfaceTintColor: Colors.white),
-        inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder(), isDense: true),
+    return ListenableBuilder(
+      listenable: AppTheme.instance,
+      builder: (context, _) => MaterialApp(
+        title: 'MDSU Rep Hub',
+        debugShowCheckedModeBanner: false,
+        // 24-hour clock everywhere (time pickers and times), as in Sweden
+        builder: (context, child) =>
+            MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
+        // MDSU blue by default; everyone can choose light/dark and a colour (Appearance)
+        theme: AppTheme.instance.build(Brightness.light),
+        darkTheme: AppTheme.instance.build(Brightness.dark),
+        themeMode: AppTheme.instance.mode,
+        home: supabaseUrl.isEmpty ? const _MissingConfig() : const AuthGate(),
       ),
-      home: supabaseUrl.isEmpty ? const _MissingConfig() : const AuthGate(),
     );
   }
 }
@@ -69,6 +63,15 @@ class _MissingConfig extends StatelessWidget {
       );
 }
 
+String? _lookFor; // whose appearance is applied
+
+/// Use the signed-in person's light/dark mode, colour and banner (defaults when signed out).
+void _applyLook(Profile? me) {
+  if (_lookFor == me?.id) return;
+  _lookFor = me?.id;
+  WidgetsBinding.instance.addPostFrameCallback((_) => AppTheme.instance.applyFrom(me?.uiPrefs));
+}
+
 /// Shows the login page, or the right app for the signed-in user's role.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -79,7 +82,10 @@ class AuthGate extends StatelessWidget {
       stream: Repo.sb.auth.onAuthStateChange,
       builder: (context, snap) {
         final session = Repo.sb.auth.currentSession;
-        if (session == null) return const LoginPage();
+        if (session == null) {
+          _applyLook(null);
+          return const LoginPage();
+        }
         return FutureBuilder<Profile>(
           key: ValueKey(session.user.id),
           future: Repo.me(),
@@ -87,6 +93,7 @@ class AuthGate extends StatelessWidget {
             if (p.hasError) return ErrorView(error: p.error!, onRetry: () => Repo.sb.auth.signOut());
             if (!p.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
             final me = p.data!;
+            _applyLook(me);
             if (!me.active) return _PendingApproval(me: me);
             if (me.mustChangePassword) return _ChooseOwnPassword(me: me);
             return _PushRegistrar(child: me.isOfficer ? OfficerShell(me: me) : RepShell(me: me));

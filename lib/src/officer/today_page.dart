@@ -5,6 +5,7 @@ import '../data/repo.dart';
 import '../data/roster.dart';
 import '../shared/format.dart';
 import '../shared/posts.dart';
+import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'officer_shell.dart' show OfficerData;
 
@@ -140,7 +141,7 @@ class _TodayPageState extends State<TodayPage> {
         final approvals = waitingList.isEmpty
             ? const SizedBox.shrink()
             : Card(
-                color: Colors.orange.shade50,
+                color: Color.alphaBlend(softBg(context, Colors.orange), Theme.of(context).cardColor),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -213,10 +214,23 @@ class _TodayPageState extends State<TodayPage> {
         return RefreshIndicator(
           onRefresh: () async => _reload(),
           child: ListView(padding: EdgeInsets.all(narrow ? 12 : 24), children: [
-            Text(_greeting(), style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 2),
-            Text([fmtDateY(DateTime.now()), if (s != null) s.name, if (days != null && days >= 0) 'report deadline in $days days']
-                .join(' · ')),
+            Stack(children: [
+              BannerHeader(
+                title: _greeting(),
+                subtitle: [fmtDateY(DateTime.now()), if (s != null) s.name, if (days != null && days >= 0) 'report deadline in $days days']
+                    .join(' · '),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton(
+                  tooltip: 'Appearance: mode, colour, banner',
+                  style: IconButton.styleFrom(backgroundColor: Colors.black26, foregroundColor: Colors.white),
+                  icon: const Icon(Icons.palette_outlined),
+                  onPressed: () => showAppearanceSheet(context),
+                ),
+              ),
+            ]),
             const SizedBox(height: 16),
             actions,
             const SizedBox(height: 16),

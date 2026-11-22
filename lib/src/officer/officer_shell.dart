@@ -6,7 +6,9 @@ import '../push/push_service.dart';
 import '../rep/more_page.dart' show TutoringBoard;
 import '../shared/posts.dart';
 import '../shared/channels_page.dart';
+import '../shared/charts.dart';
 import '../shared/format.dart';
+import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'admin_pages.dart';
 import 'agenda_builder_page.dart';
@@ -139,6 +141,8 @@ class _OfficerShellState extends State<OfficerShell> {
                 Center(child: Padding(padding: const EdgeInsets.only(right: 12), child: Text(d.semester!.name))),
               NotificationBell(onOpen: _openLink),
               if (!phone) ...[
+                IconButton(
+                    tooltip: 'Appearance', onPressed: () => showAppearanceSheet(context), icon: const Icon(Icons.palette_outlined)),
                 IconButton(tooltip: 'Refresh', onPressed: _reload, icon: const Icon(Icons.refresh)),
                 IconButton(
                     tooltip: 'Change my password',
@@ -149,10 +153,12 @@ class _OfficerShellState extends State<OfficerShell> {
                 PopupMenuButton<String>(
                   onSelected: (v) {
                     if (v == 'refresh') _reload();
+                    if (v == 'look') showAppearanceSheet(context);
                     if (v == 'password') showChangePasswordDialog(context);
                     if (v == 'out') Repo.signOut();
                   },
                   itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'look', child: Text('Appearance')),
                     PopupMenuItem(value: 'refresh', child: Text('Refresh')),
                     PopupMenuItem(value: 'password', child: Text('Change my password')),
                     PopupMenuItem(value: 'out', child: Text('Sign out')),
@@ -234,16 +240,27 @@ class _StatisticsPageState extends State<StatisticsPage> {
         final openIssues = o.issues.where((i) => i.isOpen).length;
         final upcoming = o.meetings.where((m) => !m.isPast).take(6).toList();
         return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
-          Wrap(spacing: 12, runSpacing: 12, children: [
-            Kpi(label: 'Active representatives', value: '${o.reports.length}',
+          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            DonutCard(
+              title: 'Time reports',
+              center: '$done\nof ${o.reports.length}',
+              slices: [
+                Slice('Not submitted', o.reports.where((r) => r.status == 'draft' || r.status == 'returned').length,
+                    Colors.grey.shade400),
+                Slice('To review', o.reports.where((r) => r.status == 'submitted').length, Colors.orange.shade600),
+                Slice('Approved', o.reports.where((r) => r.status == 'approved').length, Colors.blue.shade500),
+                Slice('Paid', o.reports.where((r) => r.status == 'paid').length, Colors.green.shade600),
+              ],
+            ),
+            Kpi(icon: Icons.people_outline, label: 'Active representatives', value: '${o.reports.length}',
                 sub: '${o.reports.where((r) => !r.isMember).length} not union members'),
-            Kpi(label: 'Time reports submitted', value: '$done/${o.reports.length}'),
-            Kpi(label: 'Hours logged', value: '${fmtHours(minutes)} h', sub: 'live, incl. drafts'),
-            Kpi(label: 'Estimated payout', value: sek(payout),
+            Kpi(icon: Icons.task_alt, color: Colors.green.shade700, label: 'Time reports submitted', value: '$done of ${o.reports.length}'),
+            Kpi(icon: Icons.schedule, color: Colors.indigo, label: 'Hours logged', value: '${fmtHours(minutes)} h', sub: 'live, incl. drafts'),
+            Kpi(icon: Icons.payments_outlined, color: Colors.teal, label: 'Estimated payout', value: sek(payout),
                 sub: s == null ? null : '${s.hourlyRate} SEK/h · ${s.halfHourRate} per started ½ h'),
             if (s != null)
-              Kpi(label: 'Days to deadline', value: '${daysUntil(s.reportDeadline)}', sub: fmtDateY(s.reportDeadline)),
-            Kpi(label: 'Open follow-ups', value: '$openIssues',
+              Kpi(icon: Icons.alarm, color: Colors.orange.shade800, label: 'Days to deadline', value: '${daysUntil(s.reportDeadline)}', sub: fmtDateY(s.reportDeadline)),
+            Kpi(icon: Icons.loop, color: Colors.red.shade700, label: 'Open follow-ups', value: '$openIssues', onTap: () => widget.goTo('followups'),
                 sub: '${o.issues.where((i) => i.status == 'escalated').length} escalated'),
           ]),
           LayoutBuilder(builder: (context, c) {

@@ -118,10 +118,10 @@ class _ReportsPageState extends State<ReportsPage> {
           _Steps(rows: rows),
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
-            Kpi(label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
-            Kpi(label: 'Hours submitted',
+            Kpi(icon: Icons.fact_check_outlined, color: Colors.orange.shade800, label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
+            Kpi(icon: Icons.schedule, color: Colors.indigo, label: 'Hours submitted',
                 value: '${fmtHours(submitted.fold<int>(0, (a, r) => a + r.minutes))} h'),
-            Kpi(label: 'Amount submitted', value: sek(submitted.fold<int>(0, (a, r) => a + r.amount))),
+            Kpi(icon: Icons.payments_outlined, color: Colors.teal, label: 'Amount submitted', value: sek(submitted.fold<int>(0, (a, r) => a + r.amount))),
           ]),
           const SizedBox(height: 12),
           Card(
@@ -299,7 +299,7 @@ class _Steps extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: i == 1 && n('submitted') > 0 ? Colors.orange.shade50 : t.colorScheme.surfaceContainerHighest,
+                  color: i == 1 && n('submitted') > 0 ? Colors.orange.withValues(alpha: 0.15) : t.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [

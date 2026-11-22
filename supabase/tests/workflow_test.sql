@@ -433,6 +433,12 @@ do $$ begin
   insert into t values ('17j rep cannot edit the roster', false);
 exception when others then insert into t values ('17j rep cannot edit the roster', true); end $$;
 
+-- 18. Appearance preferences: own profile only
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003', false);
+set role authenticated;
+update public.profiles set ui_prefs = '{"mode":"dark","accent":"teal"}' where id = auth.uid();
+insert into t select '18 rep saves own appearance', (select ui_prefs->>'mode' from public.profiles where id = auth.uid()) = 'dark';
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

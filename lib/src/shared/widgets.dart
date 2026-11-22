@@ -144,28 +144,93 @@ class StatusChip extends StatelessWidget {
 }
 
 /// A small card with a label and a big number (dashboard KPIs).
-class Kpi extends StatelessWidget {
+/// A number card. With an icon and colour; lifts a little under the mouse and counts up when shown.
+class Kpi extends StatefulWidget {
   final String label;
   final String value;
   final String? sub;
-  const Kpi({super.key, required this.label, required this.value, this.sub});
+  final IconData? icon;
+  final Color? color;
+  final VoidCallback? onTap;
+  const Kpi({super.key, required this.label, required this.value, this.sub, this.icon, this.color, this.onTap});
+  @override
+  State<Kpi> createState() => _KpiState();
+}
+
+class _KpiState extends State<Kpi> {
+  bool _hover = false;
+
+  /// "28.3 h", "3 705 SEK", "4 of 9": counts up the first number, keeps the rest
+  Widget _value(TextStyle? style) {
+    final m = RegExp('^(\\d[\\d \u00a0]*(?:[.,]\\d+)?)(.*)\$').firstMatch(widget.value);
+    if (m == null) return Text(widget.value, style: style);
+    final raw = m.group(1)!;
+    final target = double.tryParse(raw.replaceAll(RegExp('[ \u00a0]'), '').replaceAll(',', '.'));
+    if (target == null) return Text(widget.value, style: style);
+    final decimals = raw.contains('.') || raw.contains(',') ? raw.split(RegExp('[.,]')).last.length : 0;
+    final sep = raw.contains('\u00a0') ? '\u00a0' : (raw.contains(' ') ? ' ' : null);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: target),
+      duration: const Duration(milliseconds: 700),
+      curve: Curves.easeOutCubic,
+      builder: (context, v, _) {
+        var s = v.toStringAsFixed(decimals);
+        if (sep != null) {
+          final parts = s.split('.');
+          parts[0] = parts[0].replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => sep);
+          s = parts.join('.');
+        }
+        return Text('$s${m.group(2)}', style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+      },
+    );
+  }
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: isNarrow(context) ? 155 : 190,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // one line, so all cards in a row line up
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
-              const SizedBox(height: 4),
-              Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-              if (sub != null) Text(sub!, style: Theme.of(context).textTheme.bodySmall),
-            ]),
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final color = widget.color ?? t.colorScheme.primary;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 150),
+        offset: _hover ? const Offset(0, -0.03) : Offset.zero,
+        child: SizedBox(
+          width: isNarrow(context) ? 155 : 200,
+          child: Card(
+            elevation: _hover ? 4 : 0,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: widget.onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    if (widget.icon != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                        child: Icon(widget.icon, size: 18, color: color),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    // one line, so all cards in a row line up
+                    Expanded(
+                      child: Text(widget.label,
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.bodySmall),
+                    ),
+                  ]),
+                  const SizedBox(height: 8),
+                  _value(t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  if (widget.sub != null) Text(widget.sub!, style: t.textTheme.bodySmall),
+                ]),
+              ),
+            ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class SectionTitle extends StatelessWidget {

@@ -7,6 +7,7 @@ import '../push/push_service.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'format.dart';
+import 'theme.dart';
 import 'widgets.dart';
 
 /// Teams-like channels. Used by both the rep app and the officer app.
@@ -307,7 +308,7 @@ class _ChatViewState extends State<ChatView> {
         final m = msgs[msgs.length - 1 - i];
         final mine = m.authorId == widget.me.id;
         final bg = m.isAnnouncement
-            ? const Color(0xFFFFF6DC)
+            ? softBg(context, Colors.amber)
             : (mine ? t.colorScheme.primaryContainer : t.colorScheme.surfaceContainerHighest);
         return Align(
           alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -346,7 +347,7 @@ class _ChatViewState extends State<ChatView> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Card(
-              color: p.isAnnouncement ? const Color(0xFFFFF6DC) : null,
+              color: p.isAnnouncement ? Color.alphaBlend(softBg(context, Colors.amber), t.cardColor) : null,
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

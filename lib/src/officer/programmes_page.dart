@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/roster.dart';
+import '../shared/charts.dart';
 import '../shared/widgets.dart';
 import 'officer_shell.dart';
 import 'roster_excel.dart';
@@ -132,12 +133,23 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(spacing: 12, runSpacing: 12, children: [
-            Kpi(label: 'Seats filled', value: '$filled of $seats'),
-            Kpi(label: 'Vacant seats', value: '${seats - filled}'),
-            Kpi(label: _central ? 'Councils with nobody' : 'Programmes with nobody', value: '$empty'),
-            Kpi(label: 'Extra representatives', value: '$extra'),
-            if (!_central) Kpi(label: 'Finished their programme', value: '$finished'),
+          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            DonutCard(
+              title: 'Seats',
+              center: '$filled\nof $seats',
+              slices: [
+                Slice('Filled', filled, Colors.green.shade600),
+                Slice('Vacant', seats - filled, Colors.red.shade400),
+                Slice('Extra', extra, Colors.purple.shade300),
+              ],
+            ),
+            Kpi(icon: Icons.event_seat, color: Colors.green.shade700, label: 'Seats filled', value: '$filled of $seats'),
+            Kpi(icon: Icons.event_seat_outlined, color: Colors.red.shade700, label: 'Vacant seats', value: '${seats - filled}',
+                onTap: () => setState(() => _vacantOnly = true)),
+            Kpi(icon: Icons.person_off_outlined, color: Colors.orange.shade800, label: _central ? 'Councils with nobody' : 'Programmes with nobody', value: '$empty'),
+            Kpi(icon: Icons.group_add_outlined, color: Colors.purple, label: 'Extra representatives', value: '$extra'),
+            if (!_central)
+              Kpi(icon: Icons.school_outlined, color: Colors.blueGrey, label: 'Finished their programme', value: '$finished'),
           ]),
           const SizedBox(height: 16),
           Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
