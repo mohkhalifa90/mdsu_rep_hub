@@ -256,6 +256,7 @@ class _TutoringBoardState extends State<TutoringBoard> {
               comments: comments,
               reactions: reactions,
               canComment: !p.hidden,
+              initiallyOpen: focus,
             ),
           ]),
         ),

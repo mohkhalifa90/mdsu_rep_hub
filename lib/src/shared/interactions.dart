@@ -72,14 +72,14 @@ Future<void> pickTags(BuildContext context,
 List<String> tagsIn(String text, Set<String> tags, Map<String, String> names) =>
     [for (final id in tags) if (names[id] != null && text.contains('@${names[id]}')) id];
 
-/// Text with tagged names highlighted
-Widget mentionText(BuildContext context, String body, List<String> mentions, Map<String, String> names) {
+/// Text with tagged names highlighted, as a span (for measuring and folding)
+TextSpan mentionSpan(BuildContext context, String body, List<String> mentions, Map<String, String> names) {
   final t = Theme.of(context);
   final tagged = [
     for (final id in mentions)
       if (names[id] != null) '@${names[id]}'
   ];
-  if (tagged.isEmpty) return SelectableText(body);
+  if (tagged.isEmpty) return TextSpan(text: body, style: t.textTheme.bodyMedium);
   final re = RegExp(tagged.map(RegExp.escape).join('|'));
   final spans = <TextSpan>[];
   var last = 0;
@@ -89,7 +89,77 @@ Widget mentionText(BuildContext context, String body, List<String> mentions, Map
     last = hit.end;
   }
   if (last < body.length) spans.add(TextSpan(text: body.substring(last)));
-  return SelectableText.rich(TextSpan(style: t.textTheme.bodyMedium, children: spans));
+  return TextSpan(style: t.textTheme.bodyMedium, children: spans);
+}
+
+/// Text with tagged names highlighted; long text is folded after a few lines with "See more"
+Widget mentionText(BuildContext context, String body, List<String> mentions, Map<String, String> names,
+        {int maxLines = 4}) =>
+    ExpandableText(span: mentionSpan(context, body, mentions, names), maxLines: maxLines);
+
+/// Shows [maxLines] lines and "See more"; opens to the whole text and "See less".
+class ExpandableText extends StatefulWidget {
+  final TextSpan span;
+  final int maxLines;
+  const ExpandableText({super.key, required this.span, this.maxLines = 4});
+  @override
+  State<ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<ExpandableText> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        final tp = TextPainter(
+          text: widget.span,
+          maxLines: widget.maxLines,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: c.maxWidth);
+        if (!tp.didExceedMaxLines) return SelectableText.rich(widget.span);
+        final link = TextButton(
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
+          onPressed: () => setState(() => _open = !_open),
+          child: Text(_open ? 'See less' : 'See more'),
+        );
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _open
+              ? SelectableText.rich(widget.span)
+              : Text.rich(widget.span, maxLines: widget.maxLines, overflow: TextOverflow.ellipsis),
+          link,
+        ]);
+      });
+}
+
+/// "💬 Comment" and "3 comments ▾" under a post
+class CommentActions extends StatelessWidget {
+  final int count;
+  final bool open;
+  final VoidCallback onToggle;
+  final VoidCallback onComment;
+  const CommentActions(
+      {super.key, required this.count, required this.open, required this.onToggle, required this.onComment});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextButton.styleFrom(
+        visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8));
+    return Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+      if (count > 0)
+        TextButton(
+          style: style,
+          onPressed: onToggle,
+          child: Text('$count comment${count == 1 ? '' : 's'} ${open ? '▴' : '▾'}'),
+        ),
+      TextButton.icon(
+        style: style,
+        onPressed: onComment,
+        icon: const Icon(Icons.chat_bubble_outline, size: 16),
+        label: const Text('Comment'),
+      ),
+    ]);
+  }
 }
 
 /// Emoji chips (tap to add/remove yours, hover to see who) and a button to add one.
@@ -199,6 +269,8 @@ class EditDeleteMenu extends StatelessWidget {
 
 /// Reactions on an item, its comments (each with reactions, edit/delete) and a comment box with @tag.
 /// [kind] is 'post' or 'tutoring'.
+/// Reactions on an item, its comments (folded: the latest one, "View all") and a comment box that opens
+/// with "Comment". [kind] is 'post' or 'tutoring'.
 class ItemInteractions extends StatefulWidget {
   final String kind;
   final String itemId;
@@ -208,6 +280,7 @@ class ItemInteractions extends StatefulWidget {
   final List<ItemComment> comments; // of this item
   final List<ItemReaction> reactions; // all (filtered here)
   final bool canComment;
+  final bool initiallyOpen; // e.g. opened from a notification
   const ItemInteractions({
     super.key,
     required this.kind,
@@ -218,6 +291,7 @@ class ItemInteractions extends StatefulWidget {
     required this.comments,
     required this.reactions,
     this.canComment = true,
+    this.initiallyOpen = false,
   });
   @override
   State<ItemInteractions> createState() => _ItemInteractionsState();
@@ -226,7 +300,8 @@ class ItemInteractions extends StatefulWidget {
 class _ItemInteractionsState extends State<ItemInteractions> {
   final _text = TextEditingController();
   final _tags = <String>{};
-  bool _all = false;
+  late bool _open = widget.initiallyOpen;
+  bool _writing = false;
 
   @override
   void dispose() {
@@ -246,64 +321,83 @@ class _ItemInteractionsState extends State<ItemInteractions> {
         () => Repo.addItemComment(widget.kind, widget.itemId, text, mentions: tagsIn(text, _tags, widget.names)))) {
       _text.clear();
       _tags.clear();
-      setState(() => _all = true);
+      setState(() {
+        _open = true;
+        _writing = false;
+      });
     }
+  }
+
+  Widget _comment(ItemComment c) {
+    final t = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 4, 4),
+      decoration: BoxDecoration(color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(
+                '${widget.names[c.authorId] ?? 'Someone'} · ${fmtDateTime(c.createdAt)}'
+                '${c.editedAt != null ? ' · edited' : ''}',
+                style: t.textTheme.labelSmall),
+          ),
+          EditDeleteMenu(
+            canEdit: c.authorId == widget.meId,
+            canDelete: c.authorId == widget.meId || widget.officer,
+            onEdit: () async {
+              final v = await editTextDialog(context, title: 'Edit comment', initial: c.body);
+              if (v != null && mounted) await runAction(context, () => Repo.editItemComment(c.id, v));
+            },
+            onDelete: () async {
+              if (await confirm(context, 'Delete this comment?', 'It is deleted for everyone.', ok: 'Delete') &&
+                  mounted) {
+                await runAction(context, () => Repo.deleteItemComment(c.id));
+              }
+            },
+          ),
+        ]),
+        mentionText(context, c.body, c.mentions, widget.names),
+        ReactionBar(
+          reactions: _of('comment', c.id),
+          meId: widget.meId,
+          names: widget.names,
+          onToggle: (e, on) => Repo.reactItem('comment', c.id, e, on),
+        ),
+      ]),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context);
     final list = widget.comments;
-    final shown = _all || list.length <= 2 ? list : list.sublist(list.length - 2);
+    // folded: only the latest comment
+    final shown = _open || list.length <= 1 ? list : [list.last];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      ReactionBar(
-        reactions: _of(widget.kind, widget.itemId),
-        meId: widget.meId,
-        names: widget.names,
-        onToggle: (e, on) => Repo.reactItem(widget.kind, widget.itemId, e, on),
-      ),
-      if (list.isNotEmpty) const Divider(height: 16),
-      if (list.length > shown.length)
-        TextButton(onPressed: () => setState(() => _all = true), child: Text('Show all ${list.length} comments')),
-      for (final c in shown)
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.fromLTRB(10, 6, 4, 4),
-          decoration: BoxDecoration(color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(
-                child: Text(
-                    '${widget.names[c.authorId] ?? 'Someone'} · ${fmtDateTime(c.createdAt)}'
-                    '${c.editedAt != null ? ' · edited' : ''}',
-                    style: t.textTheme.labelSmall),
-              ),
-              EditDeleteMenu(
-                canEdit: c.authorId == widget.meId,
-                canDelete: c.authorId == widget.meId || widget.officer,
-                onEdit: () async {
-                  final v = await editTextDialog(context, title: 'Edit comment', initial: c.body);
-                  if (v != null && context.mounted) await runAction(context, () => Repo.editItemComment(c.id, v));
-                },
-                onDelete: () async {
-                  if (await confirm(context, 'Delete this comment?', 'It is deleted for everyone.', ok: 'Delete') &&
-                      context.mounted) {
-                    await runAction(context, () => Repo.deleteItemComment(c.id));
-                  }
-                },
-              ),
-            ]),
-            mentionText(context, c.body, c.mentions, widget.names),
-            ReactionBar(
-              reactions: _of('comment', c.id),
-              meId: widget.meId,
-              names: widget.names,
-              onToggle: (e, on) => Repo.reactItem('comment', c.id, e, on),
-            ),
-          ]),
+      Row(children: [
+        Expanded(
+          child: ReactionBar(
+            reactions: _of(widget.kind, widget.itemId),
+            meId: widget.meId,
+            names: widget.names,
+            onToggle: (e, on) => Repo.reactItem(widget.kind, widget.itemId, e, on),
+          ),
         ),
-      if (widget.canComment)
+        CommentActions(
+          count: list.length,
+          open: _open,
+          onToggle: () => setState(() => _open = !_open),
+          onComment: widget.canComment ? () => setState(() => _writing = !_writing) : () {},
+        ),
+      ]),
+      if (shown.isNotEmpty || _writing) const Divider(height: 12),
+      if (!_open && list.length > 1)
+        TextButton(onPressed: () => setState(() => _open = true), child: Text('View all ${list.length} comments')),
+      for (final c in shown) _comment(c),
+      if (_open && list.length > 1)
+        TextButton(onPressed: () => setState(() => _open = false), child: const Text('Hide comments')),
+      if (widget.canComment && _writing)
         Row(children: [
           IconButton(
             tooltip: 'Tag people',
@@ -316,6 +410,7 @@ class _ItemInteractionsState extends State<ItemInteractions> {
           Expanded(
             child: TextField(
               controller: _text,
+              autofocus: true,
               minLines: 1,
               maxLines: 4,
               decoration: const InputDecoration(hintText: 'Write a comment…'),

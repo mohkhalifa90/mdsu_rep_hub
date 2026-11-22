@@ -271,7 +271,9 @@ class _ChatViewState extends State<ChatView> {
   int _seenCount = -1;
   final _comment = <String, TextEditingController>{};
   final _commentTags = <String, Set<String>>{};
-  final _expanded = <String>{};
+  final _expanded = <String>{}; // posts with all comments shown
+  final _writing = <String>{}; // posts with the comment box open
+  bool _focusApplied = false;
   late final Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id);
   late final Stream<List<Reaction>> _reactions = Repo.reactionStream();
 
@@ -330,7 +332,10 @@ class _ChatViewState extends State<ChatView> {
     if (await runAction(context, () => Repo.sendMessage(widget.channel.id, text, parentId: post.id, mentions: tags))) {
       c!.clear();
       _commentTags.remove(post.id);
-      setState(() => _expanded.add(post.id));
+      setState(() {
+        _expanded.add(post.id);
+        _writing.remove(post.id);
+      });
     }
   }
 
@@ -429,7 +434,7 @@ class _ChatViewState extends State<ChatView> {
       );
 
   /// Author line, text, file, menu (edit/delete) and – for the Head of Education's own posts – "Seen by".
-  Widget _content(Message m, List<Reaction> reactions, {bool showSeen = true}) {
+  Widget _content(Message m, List<Reaction> reactions, {bool showSeen = true, Widget? actions}) {
     final t = Theme.of(context);
     final mine = m.authorId == widget.me.id;
     final canDelete = mine || _officer;
@@ -470,9 +475,13 @@ class _ChatViewState extends State<ChatView> {
         ),
       Row(children: [
         Expanded(child: _reactionBar(m, reactions)),
+        if (actions != null) actions,
         if (showSeen && _officer && (mine || m.isAnnouncement))
           TextButton.icon(
-              onPressed: () => _showReads(m), icon: const Icon(Icons.done_all, size: 16), label: const Text('Seen by…')),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () => _showReads(m),
+              icon: const Icon(Icons.done_all, size: 16),
+              label: const Text('Seen by')),
       ]),
     ]);
   }
@@ -517,6 +526,7 @@ class _ChatViewState extends State<ChatView> {
       Expanded(
         child: TextField(
           controller: c,
+          autofocus: true,
           minLines: 1,
           maxLines: 4,
           decoration: const InputDecoration(hintText: 'Write a comment…'),
@@ -539,7 +549,10 @@ class _ChatViewState extends State<ChatView> {
     if (focusPost != null) {
       final hit = posts.indexWhere((p) => p.id == focusPost);
       if (hit > 0) posts.insert(0, posts.removeAt(hit));
-      _expanded.add(focusPost);
+      if (!_focusApplied) {
+        _focusApplied = true;
+        _expanded.add(focusPost);
+      }
     }
     final accent = channelColor(widget.channel);
     if (posts.isEmpty) {
@@ -552,7 +565,9 @@ class _ChatViewState extends State<ChatView> {
         final p = posts[i];
         final list = comments[p.id] ?? const <Message>[];
         final open = _expanded.contains(p.id);
-        final shown = open || list.length <= 2 ? list : list.sublist(list.length - 2);
+        final writing = _writing.contains(p.id);
+        // folded: only the latest comment
+        final shown = open || list.length <= 1 ? list : [list.last];
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -574,12 +589,18 @@ class _ChatViewState extends State<ChatView> {
                       padding: const EdgeInsets.only(bottom: 6),
                       child: StatusChip('From your notification', t.colorScheme.primary),
                     ),
-                  _content(p, reactions),
-                  const Divider(),
-                  if (list.length > shown.length)
+                  _content(p, reactions,
+                      actions: CommentActions(
+                        count: list.length,
+                        open: open,
+                        onToggle: () => setState(() => open ? _expanded.remove(p.id) : _expanded.add(p.id)),
+                        onComment: () => setState(() => writing ? _writing.remove(p.id) : _writing.add(p.id)),
+                      )),
+                  if (shown.isNotEmpty || writing) const Divider(height: 12),
+                  if (!open && list.length > 1)
                     TextButton(
                       onPressed: () => setState(() => _expanded.add(p.id)),
-                      child: Text('Show all ${list.length} comments'),
+                      child: Text('View all ${list.length} comments'),
                     ),
                   for (final m in shown)
                     Container(
@@ -592,7 +613,12 @@ class _ChatViewState extends State<ChatView> {
                           border: m.id == widget.focusId ? Border.all(color: t.colorScheme.primary, width: 2) : null),
                       child: _content(m, reactions, showSeen: false),
                     ),
-                  _commentBox(p),
+                  if (open && list.length > 1)
+                    TextButton(
+                      onPressed: () => setState(() => _expanded.remove(p.id)),
+                      child: const Text('Hide comments'),
+                    ),
+                  if (writing) _commentBox(p),
                 ]),
               ),
             ),

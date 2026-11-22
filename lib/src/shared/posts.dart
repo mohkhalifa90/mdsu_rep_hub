@@ -70,7 +70,7 @@ class PostCard extends StatelessWidget {
           if (highlight) ...[const SizedBox(height: 6), StatusChip('From your notification', t.colorScheme.primary)],
           if (post.body.isNotEmpty) ...[
             const SizedBox(height: 8),
-            names == null ? SelectableText(post.body) : mentionText(context, post.body, post.mentions, names!),
+            mentionText(context, post.body, post.mentions, names ?? const {}),
           ],
           if (post.filePath != null) ...[
             const SizedBox(height: 8),
@@ -209,6 +209,7 @@ class _PostsPageState extends State<PostsPage> {
                             names: names,
                             comments: comments.where((c) => c.itemId == p.id).toList(),
                             reactions: reactions,
+                            initiallyOpen: p.id == widget.focusId,
                           ),
                         ),
                       ),
