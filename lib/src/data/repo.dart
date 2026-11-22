@@ -424,8 +424,19 @@ class Repo {
       _list(await sb.from('channels').select().order('sort_order').order('created_at'), Channel.fromMap);
 
   static Future<void> saveChannel(
-      {String? id, required String name, required String description, required String audience, required bool officerOnly}) {
-    final values = {'name': name, 'description': description, 'audience': audience, 'officer_only': officerOnly};
+      {String? id,
+      required String name,
+      required String description,
+      required String audience,
+      required bool officerOnly,
+      String? color}) {
+    final values = {
+      'name': name,
+      'description': description,
+      'audience': audience,
+      'officer_only': officerOnly,
+      'color': color,
+    };
     return id == null ? sb.from('channels').insert(values) : sb.from('channels').update(values).eq('id', id);
   }
 
@@ -485,9 +496,11 @@ class Repo {
       .stream(primaryKey: ['message_id', 'user_id', 'emoji'])
       .map((rows) => rows.map(Reaction.fromMap).toList());
 
-  static Future<void> react(String messageId, String emoji, bool on) => on
-      ? sb.from('message_reactions').upsert({'message_id': messageId, 'user_id': uid, 'emoji': emoji})
-      : sb.from('message_reactions').delete().eq('message_id', messageId).eq('user_id', uid).eq('emoji', emoji);
+  /// One reaction per person: a new emoji replaces the old one; off removes it.
+  static Future<void> react(String messageId, String emoji, bool on) async {
+    await sb.from('message_reactions').delete().eq('message_id', messageId).eq('user_id', uid);
+    if (on) await sb.from('message_reactions').insert({'message_id': messageId, 'user_id': uid, 'emoji': emoji});
+  }
 
   /// Marks every message from the Head of Education in the channel as seen.
   static Future<void> markChannelRead(String channelId) =>
@@ -547,9 +560,11 @@ class Repo {
 
   static Future<void> deleteItemComment(String id) => sb.from('item_comments').delete().eq('id', id);
 
-  static Future<void> reactItem(String kind, String itemId, String emoji, bool on) => on
-      ? sb.from('item_reactions').upsert({'kind': kind, 'item_id': itemId, 'user_id': uid, 'emoji': emoji})
-      : sb.from('item_reactions').delete().eq('kind', kind).eq('item_id', itemId).eq('user_id', uid).eq('emoji', emoji);
+  /// One reaction per person: a new emoji replaces the old one; off removes it.
+  static Future<void> reactItem(String kind, String itemId, String emoji, bool on) async {
+    await sb.from('item_reactions').delete().eq('kind', kind).eq('item_id', itemId).eq('user_id', uid);
+    if (on) await sb.from('item_reactions').insert({'kind': kind, 'item_id': itemId, 'user_id': uid, 'emoji': emoji});
+  }
 
   // ---------- notifications ----------
   static Stream<List<AppNotification>> notificationStream() => sb

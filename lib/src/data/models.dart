@@ -352,13 +352,15 @@ class Channel {
   final String audience;
   final bool officerOnly;
   final int sortOrder;
+  final String? color; // name from channelColors; null = picked from the id
   Channel.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         name = m['name'] as String,
         description = (m['description'] ?? '') as String,
         audience = m['audience'] as String,
         officerOnly = (m['officer_only'] ?? false) as bool,
-        sortOrder = _int(m['sort_order']);
+        sortOrder = _int(m['sort_order']),
+        color = m['color'] as String?;
 }
 
 class Message {

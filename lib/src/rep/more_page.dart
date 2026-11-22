@@ -128,7 +128,8 @@ class _RepFollowUpsPageState extends State<RepFollowUpsPage> {
 /// Tutoring board (SIEC protocol 5.1). Officer can hide posts.
 class TutoringBoard extends StatefulWidget {
   final Profile me;
-  const TutoringBoard({super.key, required this.me});
+  final String? focusId; // post to show first (from a notification)
+  const TutoringBoard({super.key, required this.me, this.focusId});
   @override
   State<TutoringBoard> createState() => _TutoringBoardState();
 }
@@ -201,9 +202,14 @@ class _TutoringBoardState extends State<TutoringBoard> {
   Widget _post(TutoringPost p, Map<String, String> names, List<ItemComment> comments, List<ItemReaction> reactions) {
     final t = Theme.of(context);
     final mine = p.authorId == widget.me.id;
+    final focus = p.id == widget.focusId;
     return Opacity(
       opacity: p.hidden ? 0.45 : 1,
       child: Card(
+        shape: focus
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.colorScheme.primary, width: 2))
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -262,7 +268,11 @@ class _TutoringBoardState extends State<TutoringBoard> {
         future: _f,
         onRetry: _reload,
         builder: (context, data) {
-          final (posts, names) = data;
+          final (all, names) = data;
+          final posts = [
+            ...all.where((p) => p.id == widget.focusId),
+            ...all.where((p) => p.id != widget.focusId),
+          ];
           return Scaffold(
             floatingActionButton: FloatingActionButton.extended(
                 onPressed: () => _write(names), icon: const Icon(Icons.add), label: const Text('New post')),

@@ -12,10 +12,32 @@ import 'theme.dart';
 import 'widgets.dart';
 
 /// Teams-like channels. Used by both the rep app and the officer app.
+/// Colours a channel can have
+const channelColors = <String, Color>{
+  'blue': Color(0xFF2F5AAE),
+  'sky': Color(0xFF0B8BC4),
+  'teal': Color(0xFF00897B),
+  'green': Color(0xFF2E7D32),
+  'amber': Color(0xFFC77C02),
+  'orange': Color(0xFFE65100),
+  'rose': Color(0xFFC2185B),
+  'purple': Color(0xFF6A4BC4),
+};
+
+/// The channel's colour (chosen, or a steady one picked from its id)
+Color channelColor(Channel c) {
+  final chosen = channelColors[c.color];
+  if (chosen != null) return chosen;
+  final all = channelColors.values.toList();
+  return all[c.id.codeUnits.fold<int>(0, (a, b) => a + b) % all.length];
+}
+
 class ChannelsPage extends StatefulWidget {
   final Profile me;
   final bool wide; // officer desktop: list + chat side by side
-  const ChannelsPage({super.key, required this.me, this.wide = false});
+  final String? openChannelId; // from a notification
+  final String? focusId; // the message to show first
+  const ChannelsPage({super.key, required this.me, this.wide = false, this.openChannelId, this.focusId});
   @override
   State<ChannelsPage> createState() => _ChannelsPageState();
 }
@@ -25,12 +47,26 @@ class _ChannelsPageState extends State<ChannelsPage> {
   Channel? _selected;
 
   Future<(List<Channel>, Map<String, String>)> _load() async => (await Repo.channels(), await Repo.memberNames());
+  bool _linkDone = false;
+
+  void _push(Channel c, Map<String, String> names, {String? focus}) => Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) => Scaffold(
+                appBar: AppBar(
+                  title: Text(c.name),
+                  backgroundColor: channelColor(c),
+                  foregroundColor: Colors.white,
+                ),
+                body: ChatView(channel: c, me: widget.me, names: names, focusId: focus),
+              )));
 
   Future<void> _editChannel({Channel? channel}) async {
     final name = TextEditingController(text: channel?.name ?? '');
     final desc = TextEditingController(text: channel?.description ?? '');
     String audience = channel?.audience ?? 'all';
     bool officerOnly = channel?.officerOnly ?? true;
+    String? color = channel?.color;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -62,6 +98,27 @@ class _ChannelsPageState extends State<ChannelsPage> {
                 value: officerOnly,
                 onChanged: (v) => setD(() => officerOnly = v),
               ),
+              const SizedBox(height: 6),
+              Align(alignment: Alignment.centerLeft, child: Text('Colour', style: Theme.of(ctx).textTheme.labelLarge)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final e in channelColors.entries)
+                  InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => setD(() => color = e.key),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: e.value,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: color == e.key ? Theme.of(ctx).colorScheme.onSurface : Colors.transparent, width: 3),
+                      ),
+                      child: color == e.key ? const Icon(Icons.check, color: Colors.white, size: 18) : null,
+                    ),
+                  ),
+              ]),
             ]),
           ),
           actions: [
@@ -95,7 +152,8 @@ class _ChannelsPageState extends State<ChannelsPage> {
               name: name.text.trim(),
               description: desc.text.trim(),
               audience: audience,
-              officerOnly: officerOnly));
+              officerOnly: officerOnly,
+              color: color));
       setState(() => _f = _load());
     }
   }
@@ -107,12 +165,29 @@ class _ChannelsPageState extends State<ChannelsPage> {
       onRetry: () => setState(() => _f = _load()),
       builder: (context, data) {
         final (channels, names) = data;
+        // opened from a notification: that channel, with the message on top
+        final linked = channels.where((c) => c.id == widget.openChannelId).toList();
+        if (!_linkDone && linked.isNotEmpty) {
+          _linkDone = true;
+          if (widget.wide) {
+            _selected = linked.first;
+          } else {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _push(linked.first, names, focus: widget.focusId));
+          }
+        }
         final list = ListView(children: [
           for (final c in channels)
             ListTile(
-              leading: Icon(c.name.toLowerCase().contains('resource')
-                  ? Icons.folder_outlined
-                  : (c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined)),
+              leading: CircleAvatar(
+                backgroundColor: channelColor(c).withValues(alpha: 0.15),
+                child: Icon(
+                    c.name.toLowerCase().contains('resource')
+                        ? Icons.folder_outlined
+                        : (c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined),
+                    color: channelColor(c)),
+              ),
+              selectedTileColor: channelColor(c).withValues(alpha: 0.10),
+              selectedColor: channelColor(c),
               trailing: widget.me.isOfficer
                   ? IconButton(
                       tooltip: 'Edit channel',
@@ -126,13 +201,7 @@ class _ChannelsPageState extends State<ChannelsPage> {
                 if (widget.wide) {
                   setState(() => _selected = c);
                 } else {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => Scaffold(
-                                appBar: AppBar(title: Text(c.name)),
-                                body: ChatView(channel: c, me: widget.me, names: names),
-                              )));
+                  _push(c, names);
                 }
               },
             ),
@@ -147,7 +216,31 @@ class _ChannelsPageState extends State<ChannelsPage> {
           Expanded(
             child: sel == null
                 ? const EmptyState('No channels yet')
-                : ChatView(key: ValueKey(sel.id), channel: sel, me: widget.me, names: names),
+                : Column(children: [
+                    // the channel's colour band
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      color: channelColor(sel),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(sel.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                        if (sel.description.isNotEmpty)
+                          Text(sel.description, style: TextStyle(color: Colors.white.withValues(alpha: 0.85))),
+                      ]),
+                    ),
+                    Expanded(
+                      child: ChatView(
+                          key: ValueKey(sel.id),
+                          channel: sel,
+                          me: widget.me,
+                          names: names,
+                          focusId: sel.id == widget.openChannelId ? widget.focusId : null),
+                    ),
+                  ]),
           ),
         ]);
       },
@@ -159,7 +252,8 @@ class ChatView extends StatefulWidget {
   final Channel channel;
   final Profile me;
   final Map<String, String> names;
-  const ChatView({super.key, required this.channel, required this.me, required this.names});
+  final String? focusId; // a post or comment to show first (from a notification)
+  const ChatView({super.key, required this.channel, required this.me, required this.names, this.focusId});
   @override
   State<ChatView> createState() => _ChatViewState();
 }
@@ -439,6 +533,15 @@ class _ChatViewState extends State<ChatView> {
     for (final m in all.where((m) => m.parentId != null)) {
       comments.putIfAbsent(m.parentId!, () => []).add(m);
     }
+    // from a notification: that post first, highlighted, with its comments open
+    final focus = all.where((m) => m.id == widget.focusId).toList();
+    final focusPost = focus.isEmpty ? null : (focus.first.parentId ?? focus.first.id);
+    if (focusPost != null) {
+      final hit = posts.indexWhere((p) => p.id == focusPost);
+      if (hit > 0) posts.insert(0, posts.removeAt(hit));
+      _expanded.add(focusPost);
+    }
+    final accent = channelColor(widget.channel);
     if (posts.isEmpty) {
       return EmptyState(_officer ? 'No posts yet – write the first one below' : 'No posts yet');
     }
@@ -455,9 +558,22 @@ class _ChatViewState extends State<ChatView> {
             constraints: const BoxConstraints(maxWidth: 720),
             child: Card(
               color: p.isAnnouncement ? Color.alphaBlend(softBg(context, Colors.amber), t.cardColor) : null,
-              child: Padding(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: p.id == focusPost
+                    ? BorderSide(color: t.colorScheme.primary, width: 2)
+                    : BorderSide(color: t.dividerColor.withValues(alpha: 0.4)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Container(
+                decoration: BoxDecoration(border: Border(left: BorderSide(color: accent, width: 5))),
                 padding: const EdgeInsets.all(12),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (p.id == focusPost)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: StatusChip('From your notification', t.colorScheme.primary),
+                    ),
                   _content(p, reactions),
                   const Divider(),
                   if (list.length > shown.length)
@@ -471,7 +587,9 @@ class _ChatViewState extends State<ChatView> {
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.fromLTRB(10, 6, 4, 4),
                       decoration: BoxDecoration(
-                          color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
+                          color: t.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(10),
+                          border: m.id == widget.focusId ? Border.all(color: t.colorScheme.primary, width: 2) : null),
                       child: _content(m, reactions, showSeen: false),
                     ),
                   _commentBox(p),

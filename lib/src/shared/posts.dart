@@ -25,13 +25,25 @@ class PostCard extends StatelessWidget {
   final VoidCallback? onEdit;
   final Map<String, String>? names; // to highlight tags
   final Widget? footer; // reactions and comments
+  final bool highlight; // opened from a notification
   const PostCard(
-      {super.key, required this.post, this.audience, this.onDelete, this.onEdit, this.names, this.footer});
+      {super.key,
+      required this.post,
+      this.audience,
+      this.onDelete,
+      this.onEdit,
+      this.names,
+      this.footer,
+      this.highlight = false});
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     return Card(
+      shape: highlight
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.colorScheme.primary, width: 2))
+          : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -55,6 +67,7 @@ class PostCard extends StatelessWidget {
                 onDelete: onDelete ?? () {},
               ),
           ]),
+          if (highlight) ...[const SizedBox(height: 6), StatusChip('From your notification', t.colorScheme.primary)],
           if (post.body.isNotEmpty) ...[
             const SizedBox(height: 8),
             names == null ? SelectableText(post.body) : mentionText(context, post.body, post.mentions, names!),
@@ -79,7 +92,9 @@ class PostsPage extends StatefulWidget {
   final bool officer;
   final List<Council> councils;
   final bool standalone; // pushed as its own screen (with app bar)
-  const PostsPage({super.key, this.officer = false, this.councils = const [], this.standalone = false});
+  final String? focusId; // post to show first (from a notification)
+  const PostsPage(
+      {super.key, this.officer = false, this.councils = const [], this.standalone = false, this.focusId});
   @override
   State<PostsPage> createState() => _PostsPageState();
 }
@@ -147,7 +162,11 @@ class _PostsPageState extends State<PostsPage> {
       future: _f,
       onRetry: _reload,
       builder: (context, data) {
-        final (posts, names) = data;
+        final (all, names) = data;
+        final posts = [
+          ...all.where((p) => p.id == widget.focusId),
+          ...all.where((p) => p.id != widget.focusId),
+        ];
         return StreamBuilder<List<ItemComment>>(
           stream: _comments,
           builder: (context, cs) => StreamBuilder<List<ItemReaction>>(
@@ -177,6 +196,7 @@ class _PostsPageState extends State<PostsPage> {
                         constraints: const BoxConstraints(maxWidth: 760),
                         child: PostCard(
                           post: p,
+                          highlight: p.id == widget.focusId,
                           names: names,
                           audience: widget.officer ? _audience(p) : null,
                           onEdit: widget.officer ? () => _edit(p) : null,

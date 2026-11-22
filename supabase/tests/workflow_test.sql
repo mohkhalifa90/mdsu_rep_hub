@@ -504,6 +504,20 @@ delete from public.posts where title = 'Exam week tips';
 insert into t select '20g deleting a post removes its comments and reactions',
   not exists (select 1 from public.item_comments) and not exists (select 1 from public.item_reactions);
 
+-- 21. One reaction per person; links to the exact post
+select from pg_temp.as_user('Lina Berg');
+insert into public.message_reactions (message_id, emoji) select id, '👍' from public.messages where body = 'Welcome everyone';
+do $$ begin
+  insert into public.message_reactions (message_id, emoji) select id, '🎉' from public.messages where body = 'Welcome everyone';
+  insert into t values ('21 only one reaction per person', false);
+exception when others then insert into t values ('21 only one reaction per person', true); end $$;
+select from pg_temp.as_user('Head of Education');
+insert into public.messages (channel_id, body) select id, 'Link test' from public.channels where name = 'Allmänt';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '21b notification opens the exact post',
+  exists (select 1 from public.notifications n join public.messages m on n.link = 'chat/' || m.channel_id || '/' || m.id
+          where m.body = 'Link test');
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

@@ -44,6 +44,7 @@ class _RepShellState extends State<RepShell> {
   late Future<RepData> _f = RepData.load(widget.me);
   int _tab = 0;
   String? _openMeeting; // agenda deep link
+  String? _openChannel, _focusMessage; // chat/<channel>/<message> link
   int _refresh = 0;
   RepData? _data;
 
@@ -69,20 +70,34 @@ class _RepShellState extends State<RepShell> {
         _openMeeting = link.substring(7);
       });
     }
-    if (link.startsWith('chat/')) return setState(() => _tab = 3);
+    if (link.startsWith('chat/')) {
+      final parts = link.split('/');
+      return setState(() {
+        _tab = 3;
+        _openChannel = parts[1];
+        _focusMessage = parts.length > 2 ? parts[2] : null;
+        _refresh++;
+      });
+    }
     if (link.startsWith('posts')) {
+      final parts = link.split('/');
       Navigator.push(
-          context, MaterialPageRoute(builder: (_) => PostsPage(councils: d.councils, standalone: true)));
+          context,
+          MaterialPageRoute(
+              builder: (_) => PostsPage(
+                  councils: d.councils, standalone: true, focusId: parts.length > 1 ? parts[1] : null)));
       return;
     }
     if (link == 'followups' || link == 'more') return setState(() => _tab = 4);
-    if (link == 'tutoring') {
+    if (link == 'tutoring' || link.startsWith('tutoring/')) {
+      final parts = link.split('/');
       setState(() => _tab = 4);
       Navigator.push(
           context,
           MaterialPageRoute(
-              builder: (_) =>
-                  Scaffold(appBar: AppBar(title: const Text('Tutoring board')), body: TutoringBoard(me: d.me))));
+              builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Tutoring board')),
+                  body: TutoringBoard(me: d.me, focusId: parts.length > 1 ? parts[1] : null))));
       return;
     }
     if (link.startsWith('log/')) {
@@ -107,7 +122,8 @@ class _RepShellState extends State<RepShell> {
               onChanged: _reload),
           HoursPage(key: ValueKey('hours$_refresh'), data: d),
           RepAgendaPage(key: ValueKey('agenda$_refresh'), data: d, openMeetingId: _openMeeting),
-          ChannelsPage(me: d.me),
+          ChannelsPage(
+              key: ValueKey('ch$_refresh'), me: d.me, openChannelId: _openChannel, focusId: _focusMessage),
           MorePage(data: d, onChanged: _reload),
         ];
         const titles = ['Rep Hub', 'My hours', 'Meetings', 'Channels', 'More'];
@@ -123,6 +139,7 @@ class _RepShellState extends State<RepShell> {
             onDestinationSelected: (i) => setState(() {
               _tab = i;
               if (i != 2) _openMeeting = null;
+              if (i != 3) _openChannel = _focusMessage = null;
             }),
             destinations: const [
               NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),

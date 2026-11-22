@@ -43,7 +43,8 @@ class OfficerShell extends StatefulWidget {
 class _OfficerShellState extends State<OfficerShell> {
   late Future<OfficerData> _f = OfficerData.load(widget.me);
   String _tab = 'today';
-  String? _openMeeting; // agenda/<id> link
+  String? _linkArg; // from a notification: meeting, channel, post or tutoring id
+  String? _linkArg2; // the message inside a channel
   int _refresh = 0;
   final _scaffold = GlobalKey<ScaffoldState>();
 
@@ -78,7 +79,10 @@ class _OfficerShellState extends State<OfficerShell> {
   int get _index => _dest.indexWhere((d) => d.$1 == _tab);
 
   void _goTo(String page) => setState(() {
-        if (page != _tab) _openMeeting = null;
+        if (page != _tab) {
+          _linkArg = null;
+          _linkArg2 = null;
+        }
         _tab = page;
       });
 
@@ -86,25 +90,31 @@ class _OfficerShellState extends State<OfficerShell> {
     final parts = link.split('/');
     final page = parts.first;
     if (_dest.any((d) => d.$1 == page)) _goTo(page);
-    if (page == 'agenda' && parts.length > 1) {
+    if (parts.length > 1) {
       setState(() {
-        _openMeeting = parts[1];
-        _refresh++; // rebuild the page so it opens the meeting
+        _linkArg = parts[1];
+        _linkArg2 = parts.length > 2 ? parts[2] : null;
+        _refresh++; // rebuild the page so it opens the item
       });
     }
   }
 
   Widget _page(OfficerData d) => switch (_tab) {
         'reports' => ReportsPage(key: ValueKey('rp$_refresh'), data: d),
-        'chat' => ChannelsPage(me: d.me, wide: MediaQuery.of(context).size.width > 800),
-        'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils),
-        'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d, openMeetingId: _openMeeting),
+        'chat' => ChannelsPage(
+            key: ValueKey('ch$_refresh'),
+            me: d.me,
+            wide: MediaQuery.of(context).size.width > 800,
+            openChannelId: _linkArg,
+            focusId: _linkArg2),
+        'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils, focusId: _linkArg),
+        'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d, openMeetingId: _linkArg),
         'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
         'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d),
         'programmes' => ProgrammesPage(key: ValueKey('pr$_refresh'), data: d, onChanged: _reload),
         'councils' => CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
         'stats' => StatisticsPage(key: ValueKey('st$_refresh'), data: d, goTo: _openLink),
-        'tutoring' => TutoringBoard(me: d.me),
+        'tutoring' => TutoringBoard(key: ValueKey('tu$_refresh'), me: d.me, focusId: _linkArg),
         'settings' => SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
         _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _openLink),
       };
