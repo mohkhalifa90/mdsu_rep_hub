@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -213,7 +216,7 @@ Future<bool> importRosterXlsx(BuildContext context) async {
 
   final _Plan plan;
   try {
-    final excel = Excel.decodeBytes(bytes);
+    final excel = Excel.decodeBytes(_relativePaths(bytes));
     final sheet = excel.tables['Roster'] ?? excel.tables.values.first;
     // find the header row
     var headerRow = -1;
@@ -347,6 +350,42 @@ _Plan _buildPlan(Sheet sheet, int headerRow, Map<String, int> idx, List<Council>
     }
   }
   return plan;
+}
+
+/// Some programs (Python, Google Sheets) write files the Excel reader trips over: absolute paths like
+/// "/xl/worksheets/sheet1.xml" and empty text cells. Tidy those up first.
+List<int> _relativePaths(List<int> bytes) {
+  try {
+    final input = ZipDecoder().decodeBytes(bytes);
+    final output = Archive();
+    var changed = false;
+    for (final f in input.files) {
+      if (!f.isFile) continue;
+      List<int> data = f.content as List<int>;
+      if (f.name == 'xl/_rels/workbook.xml.rels') {
+        final text = utf8.decode(data);
+        if (text.contains('Target="/xl/')) {
+          data = utf8.encode(text.replaceAll('Target="/xl/', 'Target="'));
+          changed = true;
+        }
+      } else if (f.name.startsWith('xl/worksheets/') && f.name.endsWith('.xml')) {
+        // empty text cells without any text inside also trip the reader – make them plain empty cells
+        final text = utf8.decode(data);
+        final fixed = text.replaceAllMapped(
+            RegExp(r'(<c [^>]*?) t="inlineStr"(\s*/>|></c>)'), (m) => '${m.group(1)}${m.group(2)}');
+        if (fixed != text) {
+          data = utf8.encode(fixed);
+          changed = true;
+        }
+      }
+      output.addFile(ArchiveFile(f.name, data.length, data));
+    }
+    if (!changed) return bytes;
+    final List<int>? encoded = ZipEncoder().encode(output);
+    return encoded ?? bytes;
+  } catch (_) {
+    return bytes;
+  }
 }
 
 Future<void> _apply(_Plan plan) async {

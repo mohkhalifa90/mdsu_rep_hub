@@ -162,7 +162,7 @@ class _KpiState extends State<Kpi> {
 
   /// "28.3 h", "3 705 SEK", "4 of 9": counts up the first number, keeps the rest
   Widget _value(TextStyle? style) {
-    final m = RegExp('^(\\d[\\d \u00a0]*(?:[.,]\\d+)?)(.*)\$').firstMatch(widget.value);
+    final m = RegExp('^(\\d+(?:[ \u00a0]\\d{3})*(?:[.,]\\d+)?)(.*)\$').firstMatch(widget.value);
     if (m == null) return Text(widget.value, style: style);
     final raw = m.group(1)!;
     final target = double.tryParse(raw.replaceAll(RegExp('[ \u00a0]'), '').replaceAll(',', '.'));
