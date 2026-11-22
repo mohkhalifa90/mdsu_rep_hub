@@ -4,6 +4,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/posts.dart';
 import '../shared/format.dart';
+import '../shared/interactions.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/theme.dart';
 import '../shared/widgets.dart';
@@ -133,32 +134,73 @@ class TutoringBoard extends StatefulWidget {
 }
 
 class _TutoringBoardState extends State<TutoringBoard> {
-  late Future<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)> _f = _load();
-  Future<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)> _load() async =>
-      (await Repo.tutoring(), await Repo.memberNames(), await Repo.tutoringComments());
+  late Future<(List<TutoringPost>, Map<String, String>)> _f = _load();
+  Future<(List<TutoringPost>, Map<String, String>)> _load() async => (await Repo.tutoring(), await Repo.memberNames());
   void _reload() => setState(() => _f = _load());
-  final _comment = <String, TextEditingController>{};
+  late final _comments = Repo.itemComments('tutoring');
+  late final _reactions = Repo.itemReactions();
 
-  @override
-  void dispose() {
-    for (final c in _comment.values) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _sendComment(TutoringPost p) async {
-    final c = _comment[p.id];
-    if (c == null || c.text.trim().isEmpty) return;
-    if (await runAction(context, () => Repo.addTutoringComment(p.id, c.text))) {
-      c.clear();
+  /// New post, or edit [post]
+  Future<void> _write(Map<String, String> names, {TutoringPost? post}) async {
+    String kind = post?.kind ?? 'offer';
+    final course = TextEditingController(text: post?.course ?? ''), body = TextEditingController(text: post?.body ?? '');
+    final tags = <String>{...?post?.mentions};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(post == null ? 'New post' : 'Edit post'),
+          content: SizedBox(
+            width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (post == null)
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'offer', label: Text('I offer help')),
+                    ButtonSegment(value: 'request', label: Text('I need help')),
+                  ],
+                  selected: {kind},
+                  onSelectionChanged: (s) => setD(() => kind = s.first),
+                ),
+              const SizedBox(height: 10),
+              TextField(controller: course, decoration: const InputDecoration(labelText: 'Course')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: body, maxLines: 4, decoration: const InputDecoration(labelText: 'What, when, where?')),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.alternate_email),
+                  label: const Text('Tag people'),
+                  onPressed: () async {
+                    await pickTags(ctx, names: names, meId: widget.me.id, into: body, tags: tags);
+                    setD(() {});
+                  },
+                ),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(post == null ? 'Post' : 'Save')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || course.text.trim().isEmpty || !mounted) return;
+    final mentions = tagsIn(body.text, tags, names);
+    if (await runAction(
+        context,
+        () => post == null
+            ? Repo.addTutoring(kind: kind, course: course.text.trim(), body: body.text.trim(), mentions: mentions)
+            : Repo.editTutoring(post.id, course: course.text.trim(), body: body.text.trim(), mentions: mentions))) {
       _reload();
     }
   }
 
-  Widget _post(TutoringPost p, Map<String, String> names, List<TutoringComment> comments) {
+  Widget _post(TutoringPost p, Map<String, String> names, List<ItemComment> comments, List<ItemReaction> reactions) {
     final t = Theme.of(context);
-    final c = _comment.putIfAbsent(p.id, () => TextEditingController());
+    final mine = p.authorId == widget.me.id;
     return Opacity(
       opacity: p.hidden ? 0.45 : 1,
       child: Card(
@@ -172,8 +214,10 @@ class _TutoringBoardState extends State<TutoringBoard> {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('${p.kind == 'offer' ? 'Offers help' : 'Needs help'} · ${p.course}', style: t.textTheme.titleSmall),
-                  if (p.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(p.body)),
-                  Text('${names[p.authorId] ?? ''} · ${fmtDate(p.createdAt)}', style: t.textTheme.bodySmall),
+                  if (p.body.isNotEmpty)
+                    Padding(padding: const EdgeInsets.only(top: 4), child: mentionText(context, p.body, p.mentions, names)),
+                  Text('${names[p.authorId] ?? ''} · ${fmtDate(p.createdAt)}${p.editedAt != null ? ' · edited' : ''}',
+                      style: t.textTheme.bodySmall),
                 ]),
               ),
               if (widget.me.isOfficer)
@@ -182,124 +226,73 @@ class _TutoringBoardState extends State<TutoringBoard> {
                       await runAction(context, () => Repo.setTutoringHidden(p.id, !p.hidden));
                       _reload();
                     },
-                    child: Text(p.hidden ? 'Show' : 'Hide'))
-              else if (p.authorId == widget.me.id)
-                IconButton(
-                    tooltip: 'Delete post',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () async {
-                      await runAction(context, () => Repo.deleteTutoring(p.id));
-                      _reload();
-                    }),
-            ]),
-            if (comments.isNotEmpty) const Divider(),
-            for (final m in comments)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
-                decoration:
-                    BoxDecoration(color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('${names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}', style: t.textTheme.labelSmall),
-                      const SizedBox(height: 2),
-                      SelectableText(m.body),
-                    ]),
-                  ),
-                  if (m.authorId == widget.me.id || widget.me.isOfficer)
-                    IconButton(
-                      tooltip: 'Delete comment',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () async {
-                        if (await confirm(context, 'Delete this comment?', 'It is deleted for everyone.', ok: 'Delete') &&
-                            mounted &&
-                            await runAction(context, () => Repo.deleteTutoringComment(m.id))) {
-                          _reload();
-                        }
-                      },
-                    ),
-                ]),
+                    child: Text(p.hidden ? 'Show' : 'Hide')),
+              EditDeleteMenu(
+                canEdit: mine,
+                canDelete: mine || widget.me.isOfficer,
+                onEdit: () => _write(names, post: p),
+                onDelete: () async {
+                  if (await confirm(context, 'Delete this post?', 'The post and its comments are deleted.', ok: 'Delete') &&
+                      mounted &&
+                      await runAction(context, () => Repo.deleteTutoring(p.id))) {
+                    _reload();
+                  }
+                },
               ),
-            if (!p.hidden)
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: c,
-                    minLines: 1,
-                    maxLines: 4,
-                    decoration: const InputDecoration(hintText: 'Write a comment…'),
-                  ),
-                ),
-                IconButton(tooltip: 'Send comment', onPressed: () => _sendComment(p), icon: const Icon(Icons.send)),
-              ]),
+            ]),
+            const SizedBox(height: 4),
+            ItemInteractions(
+              kind: 'tutoring',
+              itemId: p.id,
+              meId: widget.me.id,
+              officer: widget.me.isOfficer,
+              names: names,
+              comments: comments,
+              reactions: reactions,
+              canComment: !p.hidden,
+            ),
           ]),
         ),
       ),
     );
   }
 
-  Future<void> _new() async {
-    String kind = 'offer';
-    final course = TextEditingController(), body = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: const Text('New post'),
-          content: SizedBox(
-            width: 420,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'offer', label: Text('I offer help')),
-                  ButtonSegment(value: 'request', label: Text('I need help')),
-                ],
-                selected: {kind},
-                onSelectionChanged: (s) => setD(() => kind = s.first),
-              ),
-              const SizedBox(height: 10),
-              TextField(controller: course, decoration: const InputDecoration(labelText: 'Course')),
-              const SizedBox(height: 10),
-              TextField(
-                  controller: body, maxLines: 3, decoration: const InputDecoration(labelText: 'What, when, where?')),
-            ]),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Post')),
-          ],
-        ),
-      ),
-    );
-    if (ok == true && course.text.trim().isNotEmpty) {
-      await runAction(context, () => Repo.addTutoring(kind: kind, course: course.text.trim(), body: body.text.trim()));
-      _reload();
-    }
-  }
-
   @override
-  Widget build(BuildContext context) => Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-            onPressed: _new, icon: const Icon(Icons.add), label: const Text('New post')),
-        body: Loader<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)>(
-          future: _f,
-          onRetry: _reload,
-          builder: (context, data) {
-            final (posts, names, comments) = data;
-            return RefreshIndicator(
-              onRefresh: () async => _reload(),
-              child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
-                Text('MDSU only hosts this board and is not responsible for the tutoring itself.',
-                    style: Theme.of(context).textTheme.bodySmall),
-                if (posts.isEmpty) const EmptyState('No posts yet'),
-                for (final p in posts) _post(p, names, comments.where((c) => c.postId == p.id).toList()),
-              ]),
-            );
-          },
-        ),
+  Widget build(BuildContext context) => Loader<(List<TutoringPost>, Map<String, String>)>(
+        future: _f,
+        onRetry: _reload,
+        builder: (context, data) {
+          final (posts, names) = data;
+          return Scaffold(
+            floatingActionButton: FloatingActionButton.extended(
+                onPressed: () => _write(names), icon: const Icon(Icons.add), label: const Text('New post')),
+            body: StreamBuilder<List<ItemComment>>(
+              stream: _comments,
+              builder: (context, cs) => StreamBuilder<List<ItemReaction>>(
+                stream: _reactions,
+                builder: (context, rs) {
+                  final comments = cs.data ?? const <ItemComment>[];
+                  final reactions = rs.data ?? const <ItemReaction>[];
+                  return RefreshIndicator(
+                    onRefresh: () async => _reload(),
+                    child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
+                      Text('MDSU only hosts this board and is not responsible for the tutoring itself.',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      if (posts.isEmpty) const EmptyState('No posts yet'),
+                      for (final p in posts)
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 760),
+                            child: _post(p, names, comments.where((c) => c.itemId == p.id).toList(), reactions),
+                          ),
+                        ),
+                    ]),
+                  );
+                },
+              ),
+            ),
+          );
+        },
       );
 }
 

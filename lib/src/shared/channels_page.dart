@@ -7,6 +7,7 @@ import '../push/push_service.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'format.dart';
+import 'interactions.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -163,7 +164,6 @@ class ChatView extends StatefulWidget {
   State<ChatView> createState() => _ChatViewState();
 }
 
-const _emojis = ['👍', '❤️', '🎉', '👏', '😂', '🙏'];
 
 /// A channel. Normally a feed: the Head of Education posts, representatives comment under each
 /// post. She can tag people, react, and edit or delete her posts. (A channel can still be set to
@@ -202,9 +202,7 @@ class _ChatViewState extends State<ChatView> {
     Repo.markChannelRead(widget.channel.id).catchError((_) {});
   }
 
-  /// Keep only tags whose "@Name" is still in the text
-  List<String> _tagsIn(String text, Set<String> tags) =>
-      [for (final id in tags) if (text.contains('@${widget.names[id] ?? ''}')) id];
+  List<String> _tagsIn(String text, Set<String> tags) => tagsIn(text, tags, widget.names);
 
   Future<void> _send() async {
     final text = _text.text.trim();
@@ -242,58 +240,10 @@ class _ChatViewState extends State<ChatView> {
     }
   }
 
-  /// Head of Education: pick representatives to tag; "@Name" goes into the text
+  /// Pick people to tag; "@Name" goes into the text
   Future<void> _tag(TextEditingController into, Set<String> tags) async {
-    final people = widget.names.entries.where((e) => e.key != widget.me.id).toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
-    final chosen = <String>{};
-    var q = '';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) {
-          final shown = people.where((e) => e.value.toLowerCase().contains(q.toLowerCase())).toList();
-          return AlertDialog(
-            title: const Text('Tag representatives'),
-            content: SizedBox(
-              width: 400,
-              height: 420,
-              child: Column(children: [
-                TextField(
-                  autofocus: true,
-                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search name'),
-                  onChanged: (v) => setD(() => q = v),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView(children: [
-                    for (final e in shown)
-                      CheckboxListTile(
-                        dense: true,
-                        value: chosen.contains(e.key),
-                        onChanged: (v) => setD(() => v == true ? chosen.add(e.key) : chosen.remove(e.key)),
-                        title: Text(e.value),
-                      ),
-                  ]),
-                ),
-              ]),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-              FilledButton(
-                  onPressed: chosen.isEmpty ? null : () => Navigator.pop(ctx, true),
-                  child: Text('Tag ${chosen.isEmpty ? '' : chosen.length}')),
-            ],
-          );
-        },
-      ),
-    );
-    if (ok != true) return;
-    final add = chosen.map((id) => '@${widget.names[id]}').join(' ');
-    final t = into.text;
-    into.text = t.isEmpty || t.endsWith(' ') ? '$t$add ' : '$t $add ';
-    into.selection = TextSelection.collapsed(offset: into.text.length);
-    setState(() => tags.addAll(chosen));
+    await pickTags(context, names: widget.names, meId: widget.me.id, into: into, tags: tags);
+    setState(() {});
   }
 
   Future<void> _edit(Message m) async {
@@ -371,61 +321,18 @@ class _ChatViewState extends State<ChatView> {
   }
 
   /// The text with tagged names highlighted
-  Widget _body(Message m) {
-    final t = Theme.of(context);
-    final names = [
-      for (final id in m.mentions)
-        if (widget.names[id] != null) '@${widget.names[id]}'
-    ];
-    if (names.isEmpty) return SelectableText(m.body);
-    final re = RegExp(names.map(RegExp.escape).join('|'));
-    final spans = <TextSpan>[];
-    var last = 0;
-    for (final hit in re.allMatches(m.body)) {
-      if (hit.start > last) spans.add(TextSpan(text: m.body.substring(last, hit.start)));
-      spans.add(TextSpan(
-          text: hit.group(0),
-          style: TextStyle(color: t.colorScheme.primary, fontWeight: FontWeight.w600)));
-      last = hit.end;
-    }
-    if (last < m.body.length) spans.add(TextSpan(text: m.body.substring(last)));
-    return SelectableText.rich(TextSpan(style: t.textTheme.bodyMedium, children: spans));
-  }
+  Widget _body(Message m) => mentionText(context, m.body, m.mentions, widget.names);
 
   /// Emoji chips (tap to add/remove yours) and a button to add a reaction
-  Widget _reactionBar(Message m, List<Reaction> all) {
-    final mine = all.where((r) => r.messageId == m.id).toList();
-    final counts = <String, List<Reaction>>{};
-    for (final r in mine) {
-      counts.putIfAbsent(r.emoji, () => []).add(r);
-    }
-    final t = Theme.of(context);
-    return Wrap(spacing: 4, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-      for (final e in counts.entries)
-        Tooltip(
-          message: e.value.map((r) => widget.names[r.userId] ?? '').join(', '),
-          child: ChoiceChip(
-            visualDensity: VisualDensity.compact,
-            showCheckmark: false,
-            label: Text('${e.key} ${e.value.length}'),
-            selected: e.value.any((r) => r.userId == widget.me.id),
-            onSelected: (on) => Repo.react(m.id, e.key, on).catchError((Object err) {
-              if (mounted) showSnack(context, errorText(err));
-            }),
-          ),
-        ),
-      PopupMenuButton<String>(
-        tooltip: 'React',
-        icon: Icon(Icons.add_reaction_outlined, size: 18, color: t.colorScheme.onSurfaceVariant),
-        onSelected: (emoji) => Repo.react(m.id, emoji, true).catchError((Object err) {
-          if (mounted) showSnack(context, errorText(err));
-        }),
-        itemBuilder: (_) => [
-          for (final e in _emojis) PopupMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 22))),
+  Widget _reactionBar(Message m, List<Reaction> all) => ReactionBar(
+        reactions: [
+          for (final r in all)
+            if (r.messageId == m.id) (r.userId, r.emoji)
         ],
-      ),
-    ]);
-  }
+        meId: widget.me.id,
+        names: widget.names,
+        onToggle: (e, on) => Repo.react(m.id, e, on),
+      );
 
   /// Author line, text, file, menu (edit/delete) and – for the Head of Education's own posts – "Seen by".
   Widget _content(Message m, List<Reaction> reactions, {bool showSeen = true}) {
@@ -508,9 +415,8 @@ class _ChatViewState extends State<ChatView> {
   Widget _commentBox(Message p) {
     final c = _comment.putIfAbsent(p.id, () => TextEditingController());
     return Row(children: [
-      if (_officer)
-        IconButton(
-          tooltip: 'Tag representatives',
+      IconButton(
+          tooltip: 'Tag people',
           icon: const Icon(Icons.alternate_email),
           onPressed: () => _tag(c, _commentTags.putIfAbsent(p.id, () => <String>{})),
         ),

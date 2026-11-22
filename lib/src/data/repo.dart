@@ -223,6 +223,7 @@ class Repo {
     String? meetingId,
     String? fileName,
     Uint8List? bytes,
+    List<String> mentions = const [],
   }) async {
     String? path;
     if (fileName != null && bytes != null) {
@@ -237,8 +238,12 @@ class Repo {
       'meeting_id': meetingId,
       'file_path': path,
       'file_name': path == null ? null : fileName,
+      'mentions': mentions,
     });
   }
+
+  static Future<void> editPost(String id, {required String title, required String body}) =>
+      sb.from('posts').update({'title': title, 'body': body}).eq('id', id);
 
   static Future<void> deletePost(Post p) async {
     await sb.from('posts').delete().eq('id', p.id);
@@ -509,21 +514,42 @@ class Repo {
   static Future<List<TutoringPost>> tutoring() async =>
       _list(await sb.from('tutoring_posts').select().order('created_at', ascending: false), TutoringPost.fromMap);
 
-  static Future<void> addTutoring({required String kind, required String course, required String body}) =>
-      sb.from('tutoring_posts').insert({'kind': kind, 'course': course, 'body': body});
+  static Future<void> addTutoring(
+          {required String kind, required String course, required String body, List<String> mentions = const []}) =>
+      sb.from('tutoring_posts').insert({'kind': kind, 'course': course, 'body': body, 'mentions': mentions});
 
   static Future<void> setTutoringHidden(String id, bool hidden) =>
       sb.from('tutoring_posts').update({'hidden': hidden}).eq('id', id);
 
   static Future<void> deleteTutoring(String id) => sb.from('tutoring_posts').delete().eq('id', id);
 
-  static Future<List<TutoringComment>> tutoringComments() async =>
-      _list(await sb.from('tutoring_comments').select().order('created_at'), TutoringComment.fromMap);
+  static Future<void> editTutoring(String id, {required String course, required String body, List<String>? mentions}) =>
+      sb.from('tutoring_posts').update({'course': course, 'body': body, if (mentions != null) 'mentions': mentions}).eq('id', id);
 
-  static Future<void> addTutoringComment(String postId, String body) =>
-      sb.from('tutoring_comments').insert({'post_id': postId, 'body': body.trim()});
+  // ---------- comments & reactions on posts / tutoring (shared design) ----------
+  static Stream<List<ItemComment>> itemComments(String kind) => sb
+      .from('item_comments')
+      .stream(primaryKey: ['id'])
+      .eq('kind', kind)
+      .order('created_at', ascending: true)
+      .map((rows) => rows.map(ItemComment.fromMap).toList());
 
-  static Future<void> deleteTutoringComment(String id) => sb.from('tutoring_comments').delete().eq('id', id);
+  static Stream<List<ItemReaction>> itemReactions() => sb
+      .from('item_reactions')
+      .stream(primaryKey: ['kind', 'item_id', 'user_id', 'emoji'])
+      .map((rows) => rows.map(ItemReaction.fromMap).toList());
+
+  static Future<void> addItemComment(String kind, String itemId, String body, {List<String> mentions = const []}) =>
+      sb.from('item_comments').insert({'kind': kind, 'item_id': itemId, 'body': body.trim(), 'mentions': mentions});
+
+  static Future<void> editItemComment(String id, String body) =>
+      sb.from('item_comments').update({'body': body.trim()}).eq('id', id);
+
+  static Future<void> deleteItemComment(String id) => sb.from('item_comments').delete().eq('id', id);
+
+  static Future<void> reactItem(String kind, String itemId, String emoji, bool on) => on
+      ? sb.from('item_reactions').upsert({'kind': kind, 'item_id': itemId, 'user_id': uid, 'emoji': emoji})
+      : sb.from('item_reactions').delete().eq('kind', kind).eq('item_id', itemId).eq('user_id', uid).eq('emoji', emoji);
 
   // ---------- notifications ----------
   static Stream<List<AppNotification>> notificationStream() => sb

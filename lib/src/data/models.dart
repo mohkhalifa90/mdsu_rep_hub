@@ -165,6 +165,8 @@ class Post {
   final String? meetingId;
   final String? filePath;
   final String? fileName;
+  final List<String> mentions;
+  final DateTime? editedAt;
   final DateTime createdAt;
   Post.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -175,6 +177,8 @@ class Post {
         meetingId = m['meeting_id'] as String?,
         filePath = m['file_path'] as String?,
         fileName = m['file_name'] as String?,
+        mentions = ((m['mentions'] as List?) ?? const []).map((e) => '$e').toList(),
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
         createdAt = _dt(m['created_at']);
   bool get isFinalAgenda => meetingId != null;
 }
@@ -394,18 +398,38 @@ class Reaction {
         emoji = m['emoji'] as String;
 }
 
-class TutoringComment {
+/// A comment on a post or tutoring post (kind: post | tutoring)
+class ItemComment {
   final String id;
-  final String postId;
+  final String kind;
+  final String itemId;
   final String authorId;
   final String body;
+  final List<String> mentions;
+  final DateTime? editedAt;
   final DateTime createdAt;
-  TutoringComment.fromMap(Map<String, dynamic> m)
+  ItemComment.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
-        postId = m['post_id'] as String,
+        kind = m['kind'] as String,
+        itemId = m['item_id'] as String,
         authorId = m['author_id'] as String,
         body = m['body'] as String,
+        mentions = ((m['mentions'] as List?) ?? const []).map((e) => '$e').toList(),
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
         createdAt = _dt(m['created_at']);
+}
+
+/// An emoji on a post, tutoring post or comment (kind: post | tutoring | comment)
+class ItemReaction {
+  final String kind;
+  final String itemId;
+  final String userId;
+  final String emoji;
+  ItemReaction.fromMap(Map<String, dynamic> m)
+      : kind = m['kind'] as String,
+        itemId = m['item_id'] as String,
+        userId = m['user_id'] as String,
+        emoji = m['emoji'] as String;
 }
 
 class TutoringPost {
@@ -415,6 +439,8 @@ class TutoringPost {
   final String body;
   final String authorId;
   final bool hidden;
+  final List<String> mentions;
+  final DateTime? editedAt;
   final DateTime createdAt;
   TutoringPost.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -423,6 +449,8 @@ class TutoringPost {
         body = (m['body'] ?? '') as String,
         authorId = m['author_id'] as String,
         hidden = (m['hidden'] ?? false) as bool,
+        mentions = ((m['mentions'] as List?) ?? const []).map((e) => '$e').toList(),
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
         createdAt = _dt(m['created_at']);
 }
 

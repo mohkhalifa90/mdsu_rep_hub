@@ -454,7 +454,7 @@ select from pg_temp.as_user('Ahmed Saleh');
 insert into t select '19b tagged rep is notified', exists (select 1 from public.notifications where title like 'The Head of Education tagged you%');
 insert into public.messages (channel_id, body, parent_id, mentions)
 select channel_id, 'Thanks!', id, array['00000000-0000-0000-0000-000000000001']::uuid[] from public.messages where body = 'Welcome @Ahmed Saleh';
-insert into t select '19c rep tags are dropped', (select mentions from public.messages where body = 'Thanks!') = '{}';
+insert into t select '19c rep tags are kept now', (select cardinality(mentions) from public.messages where body = 'Thanks!') = 1;
 update public.messages set body = 'Thanks a lot!' where body = 'Thanks!';
 insert into t select '19d rep edits own comment (marked edited)', (select edited_at is not null from public.messages where body = 'Thanks a lot!');
 update public.messages set body = 'hacked' where body = 'Welcome @Ahmed Saleh';
@@ -468,15 +468,41 @@ insert into t select '19g rep told about the reaction', exists (select 1 from pu
 insert into t select '19h rep sees reactions', (select count(*) from public.message_reactions) >= 1;
 insert into public.tutoring_posts (kind, course, body) values ('request', 'Calculus', 'Help with limits');
 select from pg_temp.as_user('Lina Berg');
-insert into public.tutoring_comments (post_id, body) select id, 'I can help on Tuesday' from public.tutoring_posts where course = 'Calculus';
+insert into public.item_comments (kind, item_id, body) select 'tutoring', id, 'I can help on Tuesday' from public.tutoring_posts where course = 'Calculus';
 select from pg_temp.as_user('Ahmed Saleh');
 insert into t select '19i tutoring post author told about the comment',
   exists (select 1 from public.notifications where title like 'New comment on your tutoring post%');
-delete from public.tutoring_comments;
-insert into t select '19j cannot delete someone else''s comment', (select count(*) from public.tutoring_comments) = 1;
+delete from public.item_comments;
+insert into t select '19j cannot delete someone else''s comment', (select count(*) from public.item_comments) = 1;
 select from pg_temp.as_user('Head of Education');
-delete from public.tutoring_comments;
-insert into t select '19k officer can delete comments', (select count(*) from public.tutoring_comments) = 0;
+delete from public.item_comments;
+insert into t select '19k officer can delete comments', (select count(*) from public.item_comments) = 0;
+
+-- 20. Same interactions on posts and the tutoring board
+select from pg_temp.as_user('Head of Education');
+insert into public.posts (title, body) values ('Exam week tips', 'Good luck everyone');
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.item_comments (kind, item_id, body, mentions)
+select 'post', id, 'Thanks @Lina Berg', array['00000000-0000-0000-0000-000000000001']::uuid[] from public.posts where title = 'Exam week tips';
+insert into public.item_reactions (kind, item_id, emoji) select 'post', id, '👍' from public.posts where title = 'Exam week tips';
+select from pg_temp.as_user('Lina Berg');
+insert into t select '20 rep tags notify (rep → rep)', exists (select 1 from public.notifications where title like 'Ahmed Saleh tagged you%');
+insert into t select '20b everyone sees comments and reactions on a post',
+  (select count(*) from public.item_comments) = 1 and (select count(*) from public.item_reactions) = 1;
+select from pg_temp.as_user('Head of Education');
+insert into t select '20c post author told about the comment', exists (select 1 from public.notifications where title = 'New comment on your post: Exam week tips');
+insert into public.item_reactions (kind, item_id, emoji) select 'comment', id, '❤️' from public.item_comments where body like 'Thanks @Lina%';
+update public.posts set body = 'Good luck everyone!' where title = 'Exam week tips';
+insert into t select '20d edited post is marked', (select edited_at is not null from public.posts where title = 'Exam week tips');
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '20e comment author told about the officer''s reaction',
+  exists (select 1 from public.notifications where title = 'The Head of Education reacted ❤️' and body like 'On your post%');
+update public.item_comments set body = 'Thanks a lot' where body like 'Thanks @Lina%';
+insert into t select '20f rep edits own comment', exists (select 1 from public.item_comments where body = 'Thanks a lot' and edited_at is not null);
+select from pg_temp.as_user('Head of Education');
+delete from public.posts where title = 'Exam week tips';
+insert into t select '20g deleting a post removes its comments and reactions',
+  not exists (select 1 from public.item_comments) and not exists (select 1 from public.item_reactions);
 
 reset role;
 \echo

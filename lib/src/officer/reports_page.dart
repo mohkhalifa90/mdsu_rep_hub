@@ -20,6 +20,24 @@ class ReportsPage extends StatefulWidget {
 class _ReportsPageState extends State<ReportsPage> {
   late Future<List<ReportRow>> _f = Repo.reportOverview();
   ReportRow? _sel;
+  String _filter = 'all'; // all | notyet | submitted | approved | paid
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  static bool _inFilter(ReportRow r, String f) => switch (f) {
+        'notyet' => r.status == 'draft' || r.status == 'returned',
+        'submitted' => r.status == 'submitted',
+        'approved' => r.status == 'approved',
+        'paid' => r.status == 'paid',
+        _ => true,
+      };
+
+  void _setFilter(String f) => setState(() => _filter = _filter == f ? 'all' : f);
 
   void _reload() => setState(() {
         _f = Repo.reportOverview();
@@ -66,7 +84,7 @@ class _ReportsPageState extends State<ReportsPage> {
               Container(
                 constraints: const BoxConstraints(maxHeight: 320),
                 padding: const EdgeInsets.all(8),
-                color: const Color(0xFFF4F4F7),
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
                 child: SingleChildScrollView(child: SelectableText(csv, style: const TextStyle(fontFamily: 'monospace'))),
               ),
             ]),
@@ -102,6 +120,9 @@ class _ReportsPageState extends State<ReportsPage> {
       onRetry: _reload,
       builder: (context, rows) {
         final submitted = rows.where((r) => r.isDone).toList();
+        int count(String f) => rows.where((r) => _inFilter(r, f)).length;
+        final q = _search.text.trim().toLowerCase();
+        final shown = rows.where((r) => _inFilter(r, _filter) && (q.isEmpty || r.fullName.toLowerCase().contains(q))).toList();
         return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           PageIntro(
             text: 'Reps log hours in the app and press Submit. Reports arrive here by name; pay is calculated automatically.',
@@ -115,17 +136,65 @@ class _ReportsPageState extends State<ReportsPage> {
             ],
           ),
           const SizedBox(height: 12),
-          _Steps(rows: rows),
+          _Steps(rows: rows, selected: _filter, onTap: _setFilter),
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
-            Kpi(icon: Icons.fact_check_outlined, color: Colors.orange.shade800, label: 'Awaiting your review', value: '${rows.where((r) => r.status == 'submitted').length}'),
+            Kpi(
+                icon: Icons.edit_note,
+                color: Colors.blueGrey,
+                label: 'Draft – not submitted yet',
+                value: '${count('notyet')}',
+                onTap: () => _setFilter('notyet')),
+            Kpi(
+                icon: Icons.send_outlined,
+                color: Colors.blue.shade700,
+                label: 'Submitted',
+                value: '${submitted.length} of ${rows.length}'),
+            Kpi(
+                icon: Icons.fact_check_outlined,
+                color: Colors.orange.shade800,
+                label: 'Awaiting your review',
+                value: '${count('submitted')}',
+                onTap: () => _setFilter('submitted')),
             Kpi(icon: Icons.schedule, color: Colors.indigo, label: 'Hours submitted',
                 value: '${fmtHours(submitted.fold<int>(0, (a, r) => a + r.minutes))} h'),
             Kpi(icon: Icons.payments_outlined, color: Colors.teal, label: 'Amount submitted', value: sek(submitted.fold<int>(0, (a, r) => a + r.amount))),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            SizedBox(
+              width: 260,
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Search representative',
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(icon: const Icon(Icons.clear), onPressed: () => setState(() => _search.clear())),
+                ),
+              ),
+            ),
+            for (final (f, label) in const [
+              ('all', 'All'),
+              ('notyet', 'Draft / returned'),
+              ('submitted', 'To review'),
+              ('approved', 'Approved'),
+              ('paid', 'Paid'),
+            ])
+              ChoiceChip(
+                label: Text('$label (${count(f)})'),
+                selected: _filter == f,
+                onSelected: (_) => setState(() => _filter = f),
+              ),
+          ]),
+          const SizedBox(height: 8),
           Card(
-            child: SingleChildScrollView(
+            child: shown.isEmpty
+                ? const Padding(padding: EdgeInsets.all(24), child: EmptyState('Nobody matches'))
+                : SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 showCheckboxColumn: false,
@@ -140,7 +209,7 @@ class _ReportsPageState extends State<ReportsPage> {
                   DataColumn(label: Text('Next step')),
                 ],
                 rows: [
-                  for (final r in rows)
+                  for (final r in shown)
                     DataRow(
                       selected: _sel?.userId == r.userId,
                       onSelectChanged: (_) => setState(() => _sel = r),
@@ -277,17 +346,22 @@ Widget _nextStep(String status) {
 /// The way a time report goes, with how many reports are at each step.
 class _Steps extends StatelessWidget {
   final List<ReportRow> rows;
-  const _Steps({required this.rows});
+  final String selected;
+  final void Function(String filter) onTap;
+  const _Steps({required this.rows, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     int n(String s) => rows.where((r) => r.status == s).length;
     final notYet = rows.where((r) => r.status == 'draft' || r.status == 'returned').length;
+    // number, title, count text, icon, colour, filter, how many are waiting at this step
     final steps = [
-      ('1', 'Reps submit', '$notYet not yet', Icons.send_outlined),
-      ('2', 'You review', '${n('submitted')} waiting', Icons.fact_check_outlined),
-      ('3', 'Download Excel for payroll', '${n('approved')} approved', Icons.download),
-      ('4', 'Mark as paid', '${n('paid')} paid', Icons.payments_outlined),
+      ('1', 'Reps submit', '$notYet not yet', Icons.send_outlined, Colors.blueGrey, 'notyet', notYet),
+      ('2', 'You review', '${n('submitted')} waiting', Icons.fact_check_outlined, Colors.orange.shade800, 'submitted',
+          n('submitted')),
+      ('3', 'Download Excel for payroll', '${n('approved')} approved', Icons.download, Colors.blue.shade700, 'approved',
+          n('approved')),
+      ('4', 'Mark as paid', '${n('paid')} paid', Icons.payments_outlined, Colors.green.shade700, 'paid', n('paid')),
     ];
     final t = Theme.of(context);
     return Card(
@@ -296,26 +370,40 @@ class _Steps extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 6, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
             for (var i = 0; i < steps.length; i++) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: i == 1 && n('submitted') > 0 ? Colors.orange.withValues(alpha: 0.15) : t.colorScheme.surfaceContainerHighest,
+              Builder(builder: (context) {
+                final (no, title, sub, icon, color, filter, waiting) = steps[i];
+                final on = selected == filter;
+                // a step with reports at it is coloured; the last step is "done" (green) rather than work to do
+                final busy = waiting > 0;
+                return InkWell(
                   borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(steps[i].$4, size: 18),
-                  const SizedBox(width: 6),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${steps[i].$1}. ${steps[i].$2}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text(steps[i].$3, style: t.textTheme.bodySmall),
-                  ]),
-                ]),
-              ),
-              if (i < steps.length - 1) const Icon(Icons.arrow_forward, size: 16),
+                  onTap: () => onTap(filter),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: busy ? color.withValues(alpha: on ? 0.25 : 0.12) : t.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: on ? color : Colors.transparent, width: 2),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(icon, size: 18, color: busy ? color : t.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('$no. $title',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: busy ? color : null)),
+                        Text(sub, style: t.textTheme.bodySmall),
+                      ]),
+                    ]),
+                  ),
+                );
+              }),
+              if (i < steps.length - 1) Icon(Icons.arrow_forward, size: 16, color: t.colorScheme.onSurfaceVariant),
             ],
           ]),
           const SizedBox(height: 8),
-          Text('Click a name in the table to see the hours and notes, then Approve or Return with a comment. '
+          Text('Click a step to show only those reports. Click a name in the table to see the hours and notes, then '
+              'Approve or Return with a comment. '
               'After approving, download the Excel file for payroll and mark the reports as paid when the money is sent.',
               style: t.textTheme.bodySmall),
         ]),
