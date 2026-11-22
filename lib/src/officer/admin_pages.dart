@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../data/roster.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/theme.dart';
@@ -125,16 +127,74 @@ class _RepsPageState extends State<RepsPage> {
     bool member = p.isMember, quiz = p.quizPassed, active = p.active;
     String role = p.role;
     final councils = await Repo.councilIdsOf(p.id);
+    final email = (p.email ?? '').trim().toLowerCase();
+    final seats = (await Repo.roster()).where((r) => r.email == email).toList();
     if (!mounted) return;
+    final byId = {for (final c in d.councils) c.id: c};
+    final now = DateTime.now();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           title: Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
           content: SizedBox(
-            width: 520,
+            width: 560,
             child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // ---- who is this: email, status, seats ----
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        const Icon(Icons.mail_outline, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: SelectableText(p.email ?? '—', style: Theme.of(ctx).textTheme.titleSmall)),
+                        if (p.email != null) ...[
+                          IconButton(
+                            tooltip: 'Copy email',
+                            icon: const Icon(Icons.copy, size: 18),
+                            onPressed: () async {
+                              await Clipboard.setData(ClipboardData(text: p.email!));
+                              if (ctx.mounted) showSnack(ctx, 'Email copied');
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Send email',
+                            icon: const Icon(Icons.forward_to_inbox, size: 18),
+                            onPressed: () => launchUrl(Uri.parse('mailto:${p.email}')),
+                          ),
+                        ],
+                      ]),
+                      const SizedBox(height: 6),
+                      Wrap(spacing: 6, runSpacing: 6, children: [
+                        if (p.waitingForApproval)
+                          StatusChip('Waiting for approval', Colors.orange.shade800)
+                        else if (p.approval == 'rejected')
+                          StatusChip('Rejected', Colors.grey)
+                        else
+                          StatusChip(p.active ? 'Active' : 'Inactive', p.active ? Colors.green.shade700 : Colors.grey),
+                        StatusChip(p.isMember ? 'Union member' : 'Not a member',
+                            p.isMember ? Colors.green.shade700 : Colors.red.shade700),
+                        StatusChip(p.quizPassed ? 'Quiz passed' : 'Quiz not passed',
+                            p.quizPassed ? Colors.green.shade700 : Colors.orange.shade800),
+                        if (p.createdAt != null) StatusChip('Account since ${fmtDate(p.createdAt!)}', Colors.blueGrey),
+                      ]),
+                      if (seats.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text('Seats', style: Theme.of(ctx).textTheme.labelLarge),
+                        for (final r in seats)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('• ${byId[r.councilId]?.name ?? 'Council'}'
+                                '${Cohort.parse(r.cohort) == null ? '' : ' – ${Cohort.parse(r.cohort)!.label}, year ${Cohort.parse(r.cohort)!.studyYear(now)}'}'
+                                '${r.note == null ? '' : ' (${r.note})'}'),
+                          ),
+                      ],
+                    ]),
+                  ),
+                ),
                 TextField(controller: name, decoration: const InputDecoration(labelText: 'Full name')),
                 const SizedBox(height: 10),
                 TextField(controller: program, decoration: const InputDecoration(labelText: 'Program')),
@@ -182,14 +242,37 @@ class _RepsPageState extends State<RepsPage> {
                 SwitchListTile(
                     title: const Text('Quiz passed this semester'), value: quiz, onChanged: (v) => setD(() => quiz = v)),
                 SwitchListTile(title: const Text('Active'), value: active, onChanged: (v) => setD(() => active = v)),
-                const Align(alignment: Alignment.centerLeft, child: Text('Councils')),
-                for (final c in d.councils.where((c) => !c.isSiec))
-                  CheckboxListTile(
-                    dense: true,
-                    title: Text(c.name),
-                    value: councils.contains(c.id),
-                    onChanged: (v) => setD(() => v == true ? councils.add(c.id) : councils.remove(c.id)),
+                const SizedBox(height: 8),
+                Text('Councils (${councils.where((id) => byId[id]?.isSiec != true).length})',
+                    style: Theme.of(ctx).textTheme.labelLarge),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final id in councils)
+                    if (byId[id] != null && !byId[id]!.isSiec)
+                      InputChip(
+                        label: Text(byId[id]!.name, overflow: TextOverflow.ellipsis),
+                        onDeleted: () => setD(() => councils.remove(id)),
+                      ),
+                ]),
+                const SizedBox(height: 8),
+                Autocomplete<Council>(
+                  optionsBuilder: (v) {
+                    final q = v.text.trim().toLowerCase();
+                    if (q.isEmpty) return const Iterable<Council>.empty();
+                    return d.councils
+                        .where((c) => !c.isSiec && !councils.contains(c.id) && c.name.toLowerCase().contains(q))
+                        .take(12);
+                  },
+                  displayStringForOption: (c) => c.name,
+                  onSelected: (c) => setD(() => councils.add(c.id)),
+                  fieldViewBuilder: (ctx, ctrl, focus, _) => TextField(
+                    controller: ctrl,
+                    focusNode: focus,
+                    decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.add), hintText: 'Add a council – type part of its name'),
+                    onSubmitted: (_) => ctrl.clear(),
                   ),
+                ),
               ]),
             ),
           ),

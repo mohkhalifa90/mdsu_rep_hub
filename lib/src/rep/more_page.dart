@@ -133,9 +133,113 @@ class TutoringBoard extends StatefulWidget {
 }
 
 class _TutoringBoardState extends State<TutoringBoard> {
-  late Future<(List<TutoringPost>, Map<String, String>)> _f = _load();
-  Future<(List<TutoringPost>, Map<String, String>)> _load() async => (await Repo.tutoring(), await Repo.memberNames());
+  late Future<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)> _f = _load();
+  Future<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)> _load() async =>
+      (await Repo.tutoring(), await Repo.memberNames(), await Repo.tutoringComments());
   void _reload() => setState(() => _f = _load());
+  final _comment = <String, TextEditingController>{};
+
+  @override
+  void dispose() {
+    for (final c in _comment.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _sendComment(TutoringPost p) async {
+    final c = _comment[p.id];
+    if (c == null || c.text.trim().isEmpty) return;
+    if (await runAction(context, () => Repo.addTutoringComment(p.id, c.text))) {
+      c.clear();
+      _reload();
+    }
+  }
+
+  Widget _post(TutoringPost p, Map<String, String> names, List<TutoringComment> comments) {
+    final t = Theme.of(context);
+    final c = _comment.putIfAbsent(p.id, () => TextEditingController());
+    return Opacity(
+      opacity: p.hidden ? 0.45 : 1,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(p.kind == 'offer' ? Icons.volunteer_activism_outlined : Icons.help_outline,
+                  color: p.kind == 'offer' ? Colors.green : Colors.blue),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${p.kind == 'offer' ? 'Offers help' : 'Needs help'} · ${p.course}', style: t.textTheme.titleSmall),
+                  if (p.body.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(p.body)),
+                  Text('${names[p.authorId] ?? ''} · ${fmtDate(p.createdAt)}', style: t.textTheme.bodySmall),
+                ]),
+              ),
+              if (widget.me.isOfficer)
+                TextButton(
+                    onPressed: () async {
+                      await runAction(context, () => Repo.setTutoringHidden(p.id, !p.hidden));
+                      _reload();
+                    },
+                    child: Text(p.hidden ? 'Show' : 'Hide'))
+              else if (p.authorId == widget.me.id)
+                IconButton(
+                    tooltip: 'Delete post',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      await runAction(context, () => Repo.deleteTutoring(p.id));
+                      _reload();
+                    }),
+            ]),
+            if (comments.isNotEmpty) const Divider(),
+            for (final m in comments)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                decoration:
+                    BoxDecoration(color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}', style: t.textTheme.labelSmall),
+                      const SizedBox(height: 2),
+                      SelectableText(m.body),
+                    ]),
+                  ),
+                  if (m.authorId == widget.me.id || widget.me.isOfficer)
+                    IconButton(
+                      tooltip: 'Delete comment',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () async {
+                        if (await confirm(context, 'Delete this comment?', 'It is deleted for everyone.', ok: 'Delete') &&
+                            mounted &&
+                            await runAction(context, () => Repo.deleteTutoringComment(m.id))) {
+                          _reload();
+                        }
+                      },
+                    ),
+                ]),
+              ),
+            if (!p.hidden)
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: c,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(hintText: 'Write a comment…'),
+                  ),
+                ),
+                IconButton(tooltip: 'Send comment', onPressed: () => _sendComment(p), icon: const Icon(Icons.send)),
+              ]),
+          ]),
+        ),
+      ),
+    );
+  }
 
   Future<void> _new() async {
     String kind = 'offer';
@@ -180,44 +284,20 @@ class _TutoringBoardState extends State<TutoringBoard> {
   Widget build(BuildContext context) => Scaffold(
         floatingActionButton: FloatingActionButton.extended(
             onPressed: _new, icon: const Icon(Icons.add), label: const Text('New post')),
-        body: Loader<(List<TutoringPost>, Map<String, String>)>(
+        body: Loader<(List<TutoringPost>, Map<String, String>, List<TutoringComment>)>(
           future: _f,
           onRetry: _reload,
           builder: (context, data) {
-            final (posts, names) = data;
-            return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
-              Text('MDSU only hosts this board and is not responsible for the tutoring itself.',
-                  style: Theme.of(context).textTheme.bodySmall),
-              if (posts.isEmpty) const EmptyState('No posts yet'),
-              for (final p in posts)
-                Opacity(
-                  opacity: p.hidden ? 0.45 : 1,
-                  child: Card(
-                    child: ListTile(
-                      leading: Icon(p.kind == 'offer' ? Icons.volunteer_activism_outlined : Icons.help_outline,
-                          color: p.kind == 'offer' ? Colors.green : Colors.blue),
-                      title: Text('${p.kind == 'offer' ? 'Offers help' : 'Needs help'} · ${p.course}'),
-                      subtitle: Text('${p.body}\n${names[p.authorId] ?? ''} · ${fmtDate(p.createdAt)}'),
-                      isThreeLine: true,
-                      trailing: widget.me.isOfficer
-                          ? TextButton(
-                              onPressed: () async {
-                                await runAction(context, () => Repo.setTutoringHidden(p.id, !p.hidden));
-                                _reload();
-                              },
-                              child: Text(p.hidden ? 'Show' : 'Hide'))
-                          : (p.authorId == widget.me.id
-                              ? IconButton(
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () async {
-                                    await runAction(context, () => Repo.deleteTutoring(p.id));
-                                    _reload();
-                                  })
-                              : null),
-                    ),
-                  ),
-                ),
-            ]);
+            final (posts, names, comments) = data;
+            return RefreshIndicator(
+              onRefresh: () async => _reload(),
+              child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
+                Text('MDSU only hosts this board and is not responsible for the tutoring itself.',
+                    style: Theme.of(context).textTheme.bodySmall),
+                if (posts.isEmpty) const EmptyState('No posts yet'),
+                for (final p in posts) _post(p, names, comments.where((c) => c.postId == p.id).toList()),
+              ]),
+            );
           },
         ),
       );

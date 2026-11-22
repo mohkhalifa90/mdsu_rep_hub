@@ -458,7 +458,7 @@ class Repo {
       .map((rows) => rows.map(Message.fromMap).toList());
 
   static Future<void> sendMessage(String channelId, String body,
-          {bool announcement = false, String? filePath, String? fileName, String? parentId}) =>
+          {bool announcement = false, String? filePath, String? fileName, String? parentId, List<String>? mentions}) =>
       sb.from('messages').insert({
         'channel_id': channelId,
         'body': body,
@@ -466,7 +466,23 @@ class Repo {
         'file_path': filePath,
         'file_name': fileName,
         if (parentId != null) 'parent_id': parentId,
+        if (mentions != null && mentions.isNotEmpty) 'mentions': mentions,
       });
+
+  static Future<void> editMessage(String id, String body, {List<String>? mentions}) =>
+      sb.from('messages').update({'body': body, if (mentions != null) 'mentions': mentions}).eq('id', id);
+
+  static Future<void> deleteMessage(String id) => sb.from('messages').delete().eq('id', id);
+
+  /// All reactions I can see (live)
+  static Stream<List<Reaction>> reactionStream() => sb
+      .from('message_reactions')
+      .stream(primaryKey: ['message_id', 'user_id', 'emoji'])
+      .map((rows) => rows.map(Reaction.fromMap).toList());
+
+  static Future<void> react(String messageId, String emoji, bool on) => on
+      ? sb.from('message_reactions').upsert({'message_id': messageId, 'user_id': uid, 'emoji': emoji})
+      : sb.from('message_reactions').delete().eq('message_id', messageId).eq('user_id', uid).eq('emoji', emoji);
 
   /// Marks every message from the Head of Education in the channel as seen.
   static Future<void> markChannelRead(String channelId) =>
@@ -500,6 +516,14 @@ class Repo {
       sb.from('tutoring_posts').update({'hidden': hidden}).eq('id', id);
 
   static Future<void> deleteTutoring(String id) => sb.from('tutoring_posts').delete().eq('id', id);
+
+  static Future<List<TutoringComment>> tutoringComments() async =>
+      _list(await sb.from('tutoring_comments').select().order('created_at'), TutoringComment.fromMap);
+
+  static Future<void> addTutoringComment(String postId, String body) =>
+      sb.from('tutoring_comments').insert({'post_id': postId, 'body': body.trim()});
+
+  static Future<void> deleteTutoringComment(String id) => sb.from('tutoring_comments').delete().eq('id', id);
 
   // ---------- notifications ----------
   static Stream<List<AppNotification>> notificationStream() => sb

@@ -117,7 +117,6 @@ do $$ begin
   insert into public.messages (channel_id, body) select id, 'hi' from public.channels where name = 'SIEC';
   insert into t values ('5 rep cannot post in SIEC (moderators only)', false);
 exception when others then insert into t values ('5 rep cannot post in SIEC (moderators only)', true); end $$;
-insert into public.messages (channel_id, body) select id, 'Hello all' from public.channels where name = 'Allmänt';
 insert into t select '5b rep sees IDT channel, not HVV', exists (select 1 from public.channels where name='IDT representatives')
                                                      and not exists (select 1 from public.channels where name='HVV representatives');
 
@@ -287,10 +286,10 @@ select id, auth.uid(), 'Remember the SIEC meeting' from public.channels where na
 select from pg_temp.as_user('Ahmed Saleh');
 insert into t select '13d ordinary post by the Head of Education notifies reps',
   exists (select 1 from public.notifications where title = 'Head of Education in Allmänt' and body = 'Remember the SIEC meeting');
-insert into public.messages (channel_id, author_id, body)
-select id, auth.uid(), 'Hi all' from public.channels where name = 'Allmänt';
+insert into public.messages (channel_id, author_id, body, parent_id)
+select channel_id, auth.uid(), 'Hi all', id from public.messages where body = 'Remember the SIEC meeting';
 select from pg_temp.as_user('Lina Berg');
-insert into t select '13e rep posts do not notify', not exists (select 1 from public.notifications where body = 'Hi all');
+insert into t select '13e rep comments do not notify other reps', not exists (select 1 from public.notifications where body = 'Hi all');
 select from public.set_no_input((select id from public.meetings where title = 'CS #9'), true);
 select from public.set_no_input((select id from public.meetings where title = 'CS #9'), true);
 insert into t select '13f no-topics answer saved once', (select count(*) from public.meeting_no_input) = 1;
@@ -438,6 +437,46 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000003
 set role authenticated;
 update public.profiles set ui_prefs = '{"mode":"dark","accent":"teal"}' where id = auth.uid();
 insert into t select '18 rep saves own appearance', (select ui_prefs->>'mode' from public.profiles where id = auth.uid()) = 'dark';
+
+-- 19. Feeds: only the Head of Education posts; tags, reactions, edits; tutoring comments
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+set role authenticated;
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  insert into public.messages (channel_id, body) select id, 'rep post' from public.channels where name = 'Allmänt';
+  insert into t values ('19 reps cannot post in any channel now', false);
+exception when others then insert into t values ('19 reps cannot post in any channel now', true); end $$;
+select from pg_temp.as_user('Head of Education');
+insert into public.messages (channel_id, body, mentions)
+select id, 'Welcome @Ahmed Saleh', array['00000000-0000-0000-0000-000000000003']::uuid[] from public.channels where name = 'Allmänt';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '19b tagged rep is notified', exists (select 1 from public.notifications where title like 'The Head of Education tagged you%');
+insert into public.messages (channel_id, body, parent_id, mentions)
+select channel_id, 'Thanks!', id, array['00000000-0000-0000-0000-000000000001']::uuid[] from public.messages where body = 'Welcome @Ahmed Saleh';
+insert into t select '19c rep tags are dropped', (select mentions from public.messages where body = 'Thanks!') = '{}';
+update public.messages set body = 'Thanks a lot!' where body = 'Thanks!';
+insert into t select '19d rep edits own comment (marked edited)', (select edited_at is not null from public.messages where body = 'Thanks a lot!');
+update public.messages set body = 'hacked' where body = 'Welcome @Ahmed Saleh';
+insert into t select '19e rep cannot edit the officer''s post', exists (select 1 from public.messages where body = 'Welcome @Ahmed Saleh');
+select from pg_temp.as_user('Head of Education');
+insert into public.message_reactions (message_id, emoji) select id, '❤️' from public.messages where body = 'Thanks a lot!';
+update public.messages set body = 'Welcome everyone' where body = 'Welcome @Ahmed Saleh';
+insert into t select '19f officer edits own post', exists (select 1 from public.messages where body = 'Welcome everyone' and edited_at is not null);
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '19g rep told about the reaction', exists (select 1 from public.notifications where title = 'The Head of Education reacted ❤️');
+insert into t select '19h rep sees reactions', (select count(*) from public.message_reactions) >= 1;
+insert into public.tutoring_posts (kind, course, body) values ('request', 'Calculus', 'Help with limits');
+select from pg_temp.as_user('Lina Berg');
+insert into public.tutoring_comments (post_id, body) select id, 'I can help on Tuesday' from public.tutoring_posts where course = 'Calculus';
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '19i tutoring post author told about the comment',
+  exists (select 1 from public.notifications where title like 'New comment on your tutoring post%');
+delete from public.tutoring_comments;
+insert into t select '19j cannot delete someone else''s comment', (select count(*) from public.tutoring_comments) = 1;
+select from pg_temp.as_user('Head of Education');
+delete from public.tutoring_comments;
+insert into t select '19k officer can delete comments', (select count(*) from public.tutoring_comments) = 0;
 
 reset role;
 \echo

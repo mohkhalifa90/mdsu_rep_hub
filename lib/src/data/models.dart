@@ -367,6 +367,8 @@ class Message {
   final String? filePath;
   final String? fileName;
   final String? parentId; // set = a comment under a post
+  final DateTime? editedAt;
+  final List<String> mentions; // tagged people (ids)
   Message.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         channelId = m['channel_id'] as String,
@@ -376,7 +378,34 @@ class Message {
         createdAt = _dt(m['created_at']),
         filePath = m['file_path'] as String?,
         fileName = m['file_name'] as String?,
-        parentId = m['parent_id'] as String?;
+        parentId = m['parent_id'] as String?,
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
+        mentions = ((m['mentions'] as List?) ?? const []).map((e) => '$e').toList();
+}
+
+/// An emoji reaction on a post or comment
+class Reaction {
+  final String messageId;
+  final String userId;
+  final String emoji;
+  Reaction.fromMap(Map<String, dynamic> m)
+      : messageId = m['message_id'] as String,
+        userId = m['user_id'] as String,
+        emoji = m['emoji'] as String;
+}
+
+class TutoringComment {
+  final String id;
+  final String postId;
+  final String authorId;
+  final String body;
+  final DateTime createdAt;
+  TutoringComment.fromMap(Map<String, dynamic> m)
+      : id = m['id'] as String,
+        postId = m['post_id'] as String,
+        authorId = m['author_id'] as String,
+        body = m['body'] as String,
+        createdAt = _dt(m['created_at']);
 }
 
 class TutoringPost {

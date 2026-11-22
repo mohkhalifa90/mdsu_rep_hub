@@ -132,6 +132,10 @@ class _CouncilsPageState extends State<CouncilsPage> {
                         title: Text(c.name),
                         subtitle: Text([
                           if (c.academy != null) 'Academy ${c.academy}',
+                          // when new students start: HT = autumn, VT = spring
+                          if (c.intake != null) 'starts ${c.intake == 'HT_VT' ? 'HT & VT' : c.intake}',
+                          if (c.lengthYears != null)
+                            '${c.lengthYears! == c.lengthYears!.roundToDouble() ? c.lengthYears!.toInt() : c.lengthYears} years',
                           c.isSiec ? 'all representatives' : '${st.members[c.id] ?? 0} representative(s)',
                           '${st.meetings[c.id] ?? 0} meeting(s)',
                         ].join(' · ')),

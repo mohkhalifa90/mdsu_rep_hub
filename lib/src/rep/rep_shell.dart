@@ -76,6 +76,15 @@ class _RepShellState extends State<RepShell> {
       return;
     }
     if (link == 'followups' || link == 'more') return setState(() => _tab = 4);
+    if (link == 'tutoring') {
+      setState(() => _tab = 4);
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) =>
+                  Scaffold(appBar: AppBar(title: const Text('Tutoring board')), body: TutoringBoard(me: d.me))));
+      return;
+    }
     if (link.startsWith('log/')) {
       setState(() => _tab = 1);
       showLogTimeSheet(context, d, meetingId: link.substring(4)).then((_) => _reload());

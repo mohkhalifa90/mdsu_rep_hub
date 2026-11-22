@@ -29,7 +29,7 @@ class _ChannelsPageState extends State<ChannelsPage> {
     final name = TextEditingController(text: channel?.name ?? '');
     final desc = TextEditingController(text: channel?.description ?? '');
     String audience = channel?.audience ?? 'all';
-    bool officerOnly = channel?.officerOnly ?? false;
+    bool officerOnly = channel?.officerOnly ?? true;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -163,20 +163,27 @@ class ChatView extends StatefulWidget {
   State<ChatView> createState() => _ChatViewState();
 }
 
-/// A chat (everyone writes) or – in channels where only the Head of Education posts – a feed of
-/// her posts with comments from the representatives under each one.
+const _emojis = ['👍', '❤️', '🎉', '👏', '😂', '🙏'];
+
+/// A channel. Normally a feed: the Head of Education posts, representatives comment under each
+/// post. She can tag people, react, and edit or delete her posts. (A channel can still be set to
+/// chat mode, where everyone writes.)
 class _ChatViewState extends State<ChatView> {
   final _text = TextEditingController();
+  final _postTags = <String>{};
   bool _announcement = false;
   bool _sending = false;
   PlatformFile? _file;
   int _seenCount = -1;
   final _comment = <String, TextEditingController>{};
+  final _commentTags = <String, Set<String>>{};
   final _expanded = <String>{};
   late final Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id);
+  late final Stream<List<Reaction>> _reactions = Repo.reactionStream();
 
   bool get _feed => widget.channel.officerOnly;
   bool get _canPost => !widget.channel.officerOnly || widget.me.isOfficer;
+  bool get _officer => widget.me.isOfficer;
 
   @override
   void dispose() {
@@ -190,10 +197,14 @@ class _ChatViewState extends State<ChatView> {
   /// Representatives: opening the channel (and every new message while it is open) counts as
   /// having seen the Head of Education's messages.
   void _markSeen(int count) {
-    if (widget.me.isOfficer || count == _seenCount) return;
+    if (_officer || count == _seenCount) return;
     _seenCount = count;
     Repo.markChannelRead(widget.channel.id).catchError((_) {});
   }
+
+  /// Keep only tags whose "@Name" is still in the text
+  List<String> _tagsIn(String text, Set<String> tags) =>
+      [for (final id in tags) if (text.contains('@${widget.names[id] ?? ''}')) id];
 
   Future<void> _send() async {
     final text = _text.text.trim();
@@ -203,7 +214,10 @@ class _ChatViewState extends State<ChatView> {
       String? path;
       if (_file?.bytes != null) path = await Repo.uploadChannelFile(_file!.name, _file!.bytes!);
       await Repo.sendMessage(widget.channel.id, text.isEmpty ? '📎 ${_file!.name}' : text,
-          announcement: widget.me.isOfficer && _announcement, filePath: path, fileName: _file?.name);
+          announcement: _officer && _announcement,
+          filePath: path,
+          fileName: _file?.name,
+          mentions: _tagsIn(text, _postTags));
     });
     if (!mounted) return;
     setState(() {
@@ -211,6 +225,7 @@ class _ChatViewState extends State<ChatView> {
       if (ok) {
         _text.clear();
         _file = null;
+        _postTags.clear();
       }
     });
   }
@@ -219,9 +234,95 @@ class _ChatViewState extends State<ChatView> {
     final c = _comment[post.id];
     final text = c?.text.trim() ?? '';
     if (text.isEmpty) return;
-    if (await runAction(context, () => Repo.sendMessage(widget.channel.id, text, parentId: post.id))) {
+    final tags = _tagsIn(text, _commentTags[post.id] ?? {});
+    if (await runAction(context, () => Repo.sendMessage(widget.channel.id, text, parentId: post.id, mentions: tags))) {
       c!.clear();
+      _commentTags.remove(post.id);
       setState(() => _expanded.add(post.id));
+    }
+  }
+
+  /// Head of Education: pick representatives to tag; "@Name" goes into the text
+  Future<void> _tag(TextEditingController into, Set<String> tags) async {
+    final people = widget.names.entries.where((e) => e.key != widget.me.id).toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    final chosen = <String>{};
+    var q = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          final shown = people.where((e) => e.value.toLowerCase().contains(q.toLowerCase())).toList();
+          return AlertDialog(
+            title: const Text('Tag representatives'),
+            content: SizedBox(
+              width: 400,
+              height: 420,
+              child: Column(children: [
+                TextField(
+                  autofocus: true,
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search name'),
+                  onChanged: (v) => setD(() => q = v),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView(children: [
+                    for (final e in shown)
+                      CheckboxListTile(
+                        dense: true,
+                        value: chosen.contains(e.key),
+                        onChanged: (v) => setD(() => v == true ? chosen.add(e.key) : chosen.remove(e.key)),
+                        title: Text(e.value),
+                      ),
+                  ]),
+                ),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: chosen.isEmpty ? null : () => Navigator.pop(ctx, true),
+                  child: Text('Tag ${chosen.isEmpty ? '' : chosen.length}')),
+            ],
+          );
+        },
+      ),
+    );
+    if (ok != true) return;
+    final add = chosen.map((id) => '@${widget.names[id]}').join(' ');
+    final t = into.text;
+    into.text = t.isEmpty || t.endsWith(' ') ? '$t$add ' : '$t $add ';
+    into.selection = TextSelection.collapsed(offset: into.text.length);
+    setState(() => tags.addAll(chosen));
+  }
+
+  Future<void> _edit(Message m) async {
+    final c = TextEditingController(text: m.body);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(m.parentId == null ? 'Edit post' : 'Edit comment'),
+        content: SizedBox(
+          width: 520,
+          child: TextField(controller: c, autofocus: true, minLines: 3, maxLines: 12),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (ok != true || c.text.trim().isEmpty || !mounted) return;
+    await runAction(context, () => Repo.editMessage(m.id, c.text.trim()), success: 'Saved');
+  }
+
+  Future<void> _delete(Message m) async {
+    final post = m.parentId == null;
+    if (await confirm(context, post ? 'Delete this post?' : 'Delete this comment?',
+            post ? 'The post and all comments under it are deleted for everyone.' : 'The comment is deleted for everyone.',
+            ok: 'Delete') &&
+        mounted) {
+      await runAction(context, () => Repo.deleteMessage(m.id), success: 'Deleted');
     }
   }
 
@@ -269,17 +370,94 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  /// Author line, text, file and – for the Head of Education's own messages – "Seen by".
-  Widget _content(Message m, {bool showSeen = true}) {
+  /// The text with tagged names highlighted
+  Widget _body(Message m) {
     final t = Theme.of(context);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(
-        '${widget.names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}'
-        '${m.isAnnouncement ? ' · announcement' : ''}',
-        style: t.textTheme.labelSmall,
+    final names = [
+      for (final id in m.mentions)
+        if (widget.names[id] != null) '@${widget.names[id]}'
+    ];
+    if (names.isEmpty) return SelectableText(m.body);
+    final re = RegExp(names.map(RegExp.escape).join('|'));
+    final spans = <TextSpan>[];
+    var last = 0;
+    for (final hit in re.allMatches(m.body)) {
+      if (hit.start > last) spans.add(TextSpan(text: m.body.substring(last, hit.start)));
+      spans.add(TextSpan(
+          text: hit.group(0),
+          style: TextStyle(color: t.colorScheme.primary, fontWeight: FontWeight.w600)));
+      last = hit.end;
+    }
+    if (last < m.body.length) spans.add(TextSpan(text: m.body.substring(last)));
+    return SelectableText.rich(TextSpan(style: t.textTheme.bodyMedium, children: spans));
+  }
+
+  /// Emoji chips (tap to add/remove yours) and a button to add a reaction
+  Widget _reactionBar(Message m, List<Reaction> all) {
+    final mine = all.where((r) => r.messageId == m.id).toList();
+    final counts = <String, List<Reaction>>{};
+    for (final r in mine) {
+      counts.putIfAbsent(r.emoji, () => []).add(r);
+    }
+    final t = Theme.of(context);
+    return Wrap(spacing: 4, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      for (final e in counts.entries)
+        Tooltip(
+          message: e.value.map((r) => widget.names[r.userId] ?? '').join(', '),
+          child: ChoiceChip(
+            visualDensity: VisualDensity.compact,
+            showCheckmark: false,
+            label: Text('${e.key} ${e.value.length}'),
+            selected: e.value.any((r) => r.userId == widget.me.id),
+            onSelected: (on) => Repo.react(m.id, e.key, on).catchError((Object err) {
+              if (mounted) showSnack(context, errorText(err));
+            }),
+          ),
+        ),
+      PopupMenuButton<String>(
+        tooltip: 'React',
+        icon: Icon(Icons.add_reaction_outlined, size: 18, color: t.colorScheme.onSurfaceVariant),
+        onSelected: (emoji) => Repo.react(m.id, emoji, true).catchError((Object err) {
+          if (mounted) showSnack(context, errorText(err));
+        }),
+        itemBuilder: (_) => [
+          for (final e in _emojis) PopupMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 22))),
+        ],
       ),
+    ]);
+  }
+
+  /// Author line, text, file, menu (edit/delete) and – for the Head of Education's own posts – "Seen by".
+  Widget _content(Message m, List<Reaction> reactions, {bool showSeen = true}) {
+    final t = Theme.of(context);
+    final mine = m.authorId == widget.me.id;
+    final canDelete = mine || _officer;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(
+          child: Text(
+            '${widget.names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}'
+            '${m.isAnnouncement ? ' · announcement' : ''}${m.editedAt != null ? ' · edited' : ''}',
+            style: t.textTheme.labelSmall,
+          ),
+        ),
+        if (canDelete)
+          SizedBox(
+            height: 28,
+            child: PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              iconSize: 18,
+              tooltip: 'More',
+              onSelected: (v) => v == 'edit' ? _edit(m) : _delete(m),
+              itemBuilder: (_) => [
+                if (mine) const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ),
+      ]),
       const SizedBox(height: 4),
-      SelectableText(m.body),
+      _body(m),
       if (m.filePath != null)
         Padding(
           padding: const EdgeInsets.only(top: 6),
@@ -289,15 +467,16 @@ class _ChatViewState extends State<ChatView> {
             onPressed: () => _openFile(m),
           ),
         ),
-      if (showSeen && widget.me.isOfficer && (m.authorId == widget.me.id || m.isAnnouncement))
-        TextButton.icon(
-            onPressed: () => _showReads(m),
-            icon: const Icon(Icons.done_all, size: 16),
-            label: const Text('Seen by…')),
+      Row(children: [
+        Expanded(child: _reactionBar(m, reactions)),
+        if (showSeen && _officer && (mine || m.isAnnouncement))
+          TextButton.icon(
+              onPressed: () => _showReads(m), icon: const Icon(Icons.done_all, size: 16), label: const Text('Seen by…')),
+      ]),
     ]);
   }
 
-  Widget _chat(List<Message> msgs) {
+  Widget _chat(List<Message> msgs, List<Reaction> reactions) {
     final t = Theme.of(context);
     if (msgs.isEmpty) return const EmptyState('No messages yet');
     return ListView.builder(
@@ -318,7 +497,7 @@ class _ChatViewState extends State<ChatView> {
               margin: const EdgeInsets.symmetric(vertical: 4),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
-              child: _content(m),
+              child: _content(m, reactions),
             ),
           ),
         );
@@ -326,14 +505,37 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Widget _posts(List<Message> all) {
+  Widget _commentBox(Message p) {
+    final c = _comment.putIfAbsent(p.id, () => TextEditingController());
+    return Row(children: [
+      if (_officer)
+        IconButton(
+          tooltip: 'Tag representatives',
+          icon: const Icon(Icons.alternate_email),
+          onPressed: () => _tag(c, _commentTags.putIfAbsent(p.id, () => <String>{})),
+        ),
+      Expanded(
+        child: TextField(
+          controller: c,
+          minLines: 1,
+          maxLines: 4,
+          decoration: const InputDecoration(hintText: 'Write a comment…'),
+        ),
+      ),
+      IconButton(tooltip: 'Send comment', onPressed: () => _sendComment(p), icon: const Icon(Icons.send)),
+    ]);
+  }
+
+  Widget _posts(List<Message> all, List<Reaction> reactions) {
     final t = Theme.of(context);
     final posts = all.where((m) => m.parentId == null).toList().reversed.toList(); // newest first
     final comments = <String, List<Message>>{};
     for (final m in all.where((m) => m.parentId != null)) {
       comments.putIfAbsent(m.parentId!, () => []).add(m);
     }
-    if (posts.isEmpty) return const EmptyState('No posts yet');
+    if (posts.isEmpty) {
+      return EmptyState(_officer ? 'No posts yet – write the first one below' : 'No posts yet');
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: posts.length,
@@ -342,7 +544,6 @@ class _ChatViewState extends State<ChatView> {
         final list = comments[p.id] ?? const <Message>[];
         final open = _expanded.contains(p.id);
         final shown = open || list.length <= 2 ? list : list.sublist(list.length - 2);
-        final c = _comment.putIfAbsent(p.id, () => TextEditingController());
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -351,7 +552,7 @@ class _ChatViewState extends State<ChatView> {
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  _content(p),
+                  _content(p, reactions),
                   const Divider(),
                   if (list.length > shown.length)
                     TextButton(
@@ -362,22 +563,12 @@ class _ChatViewState extends State<ChatView> {
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.fromLTRB(10, 6, 4, 4),
                       decoration: BoxDecoration(
                           color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
-                      child: _content(m, showSeen: false),
+                      child: _content(m, reactions, showSeen: false),
                     ),
-                  Row(children: [
-                    Expanded(
-                      child: TextField(
-                        controller: c,
-                        minLines: 1,
-                        maxLines: 4,
-                        decoration: const InputDecoration(hintText: 'Write a comment…'),
-                      ),
-                    ),
-                    IconButton(tooltip: 'Send comment', onPressed: () => _sendComment(p), icon: const Icon(Icons.send)),
-                  ]),
+                  _commentBox(p),
                 ]),
               ),
             ),
@@ -398,7 +589,15 @@ class _ChatViewState extends State<ChatView> {
             if (!snap.hasData) return const Center(child: CircularProgressIndicator());
             final msgs = snap.data!;
             _markSeen(msgs.length);
-            return _feed ? _posts(msgs) : _chat(msgs.where((m) => m.parentId == null).toList());
+            return StreamBuilder<List<Reaction>>(
+              stream: _reactions,
+              builder: (context, r) {
+                final reactions = r.data ?? const <Reaction>[];
+                return _feed
+                    ? _posts(msgs, reactions)
+                    : _chat(msgs.where((m) => m.parentId == null).toList(), reactions);
+              },
+            );
           },
         ),
       ),
@@ -407,7 +606,7 @@ class _ChatViewState extends State<ChatView> {
         Padding(
           padding: const EdgeInsets.all(8),
           child: Column(children: [
-            if (widget.me.isOfficer)
+            if (_officer)
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
@@ -426,11 +625,16 @@ class _ChatViewState extends State<ChatView> {
               ),
             Row(children: [
               IconButton(tooltip: 'Attach file', onPressed: _pickFile, icon: const Icon(Icons.attach_file)),
+              if (_officer)
+                IconButton(
+                    tooltip: 'Tag representatives',
+                    onPressed: () => _tag(_text, _postTags),
+                    icon: const Icon(Icons.alternate_email)),
               Expanded(
                 child: TextField(
                   controller: _text,
                   minLines: 1,
-                  maxLines: 4,
+                  maxLines: 6,
                   decoration: InputDecoration(
                       hintText: _feed ? 'New post in ${widget.channel.name}…' : 'Write to ${widget.channel.name}…'),
                 ),
@@ -441,9 +645,10 @@ class _ChatViewState extends State<ChatView> {
           ]),
         )
       else
-        const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text('Only the Head of Education posts here – you can comment under her posts')),
+        Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('Only the Head of Education posts here – comment under her posts',
+                style: Theme.of(context).textTheme.bodySmall)),
     ]);
   }
 }
