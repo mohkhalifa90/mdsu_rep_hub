@@ -58,6 +58,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.orange.shade800,
                 label: 'Open follow-ups',
                 value: '${issues.where((i) => i.isOpen).length}',
+                selected: _filter == 'open',
                 onTap: () => setState(() => _filter = 'open')),
             Kpi(
                 icon: Icons.priority_high,
@@ -65,12 +66,14 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 label: 'Escalated',
                 value: '${issues.where((i) => i.status == 'escalated').length}',
                 sub: 'no answer for several meetings',
+                selected: _filter == 'escalated',
                 onTap: () => setState(() => _filter = 'escalated')),
             Kpi(
                 icon: Icons.check_circle_outline,
                 color: Colors.green.shade700,
                 label: 'Answered',
                 value: '${issues.where((i) => i.status == 'answered').length}',
+                selected: _filter == 'answered',
                 onTap: () => setState(() => _filter = 'answered')),
           ]),
           const SizedBox(height: 12),
@@ -427,6 +430,8 @@ class _RepsPageState extends State<RepsPage> {
         'active' => p.active,
         'waiting' => p.waitingForApproval,
         'inactive' => !p.active && !p.waitingForApproval,
+        'notmember' => p.active && p.role == 'rep' && !p.isMember,
+        'noquiz' => p.active && p.role == 'rep' && !p.quizPassed,
         _ => true,
       };
       if (!ok) return false;
@@ -441,8 +446,17 @@ class _RepsPageState extends State<RepsPage> {
       'active': people.where((p) => p.active).length,
       'waiting': people.where((p) => p.waitingForApproval).length,
       'inactive': people.where((p) => !p.active && !p.waitingForApproval).length,
+      'notmember': people.where((p) => p.active && p.role == 'rep' && !p.isMember).length,
+      'noquiz': people.where((p) => p.active && p.role == 'rep' && !p.quizPassed).length,
     };
-    const labels = {'all': 'All', 'active': 'Active', 'waiting': 'Waiting for approval', 'inactive': 'Inactive'};
+    const labels = {
+      'all': 'All',
+      'active': 'Active',
+      'waiting': 'Waiting for approval',
+      'inactive': 'Inactive',
+      'notmember': 'Not union members',
+      'noquiz': 'Quiz not passed',
+    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
@@ -525,25 +539,31 @@ class _RepsPageState extends State<RepsPage> {
                   icon: Icons.people_outline,
                   label: 'Active representatives',
                   value: '${active.length}',
-                  onTap: () => setState(() => _filter = 'active')),
+                  selected: _filter == 'active',
+                  onTap: () => setState(() => _filter = _filter == 'active' ? 'all' : 'active')),
               Kpi(
                   icon: Icons.card_membership_outlined,
                   color: Colors.red.shade700,
                   label: 'Not union members',
                   value: '${active.where((p) => !p.isMember).length}',
-                  sub: 'among the active'),
+                  sub: 'tap to see who',
+                  selected: _filter == 'notmember',
+                  onTap: () => setState(() => _filter = _filter == 'notmember' ? 'all' : 'notmember')),
               Kpi(
                   icon: Icons.quiz_outlined,
                   color: Colors.orange.shade800,
                   label: 'Quiz not passed',
                   value: '${active.where((p) => !p.quizPassed).length}',
-                  sub: 'among the active'),
+                  sub: 'tap to see who',
+                  selected: _filter == 'noquiz',
+                  onTap: () => setState(() => _filter = _filter == 'noquiz' ? 'all' : 'noquiz')),
               Kpi(
                   icon: Icons.person_add_alt,
                   color: Colors.teal,
                   label: 'Waiting for approval',
                   value: '${people.where((p) => p.waitingForApproval).length}',
-                  onTap: () => setState(() => _filter = 'waiting')),
+                  selected: _filter == 'waiting',
+                  onTap: () => setState(() => _filter = _filter == 'waiting' ? 'all' : 'waiting')),
             ]);
           }),
           const SizedBox(height: 8),
@@ -759,6 +779,8 @@ class _SettingsPageState extends State<SettingsPage> {
           onTap: () => showAppearanceSheet(context),
         ),
       ),
+      const SectionTitle('Payslips'),
+      const _PayslipCard(),
       const SectionTitle('Accounts'),
       Card(
         child: SwitchListTile(
@@ -827,4 +849,75 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
     ]);
   }
+}
+
+
+/// Link to where reps see their payslip (e.g. Fortnox). Sent with the "paid" notification.
+class _PayslipCard extends StatefulWidget {
+  const _PayslipCard();
+  @override
+  State<_PayslipCard> createState() => _PayslipCardState();
+}
+
+class _PayslipCardState extends State<_PayslipCard> {
+  final _url = TextEditingController(), _label = TextEditingController(text: 'Fortnox');
+
+  @override
+  void initState() {
+    super.initState();
+    Repo.payslipLink().then((v) {
+      if (!mounted) return;
+      setState(() {
+        _url.text = v.$1 ?? '';
+        _label.text = v.$2;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _label.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('When you mark a report as paid, the representative gets a notification. With a link here, '
+                'tapping it opens the payroll app where they see their payslip, tax and details. '
+                'They also get a "See your payslip" button on their paid report.'),
+            const SizedBox(height: 10),
+            Wrap(spacing: 12, runSpacing: 10, children: [
+              SizedBox(
+                width: 380,
+                child: TextField(
+                  controller: _url,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                      labelText: 'Payslip link', hintText: 'https://… (the page or app link reps use)'),
+                ),
+              ),
+              SizedBox(
+                width: 180,
+                child: TextField(controller: _label, decoration: const InputDecoration(labelText: 'Name, e.g. Fortnox')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final u = _url.text.trim();
+                  if (u.isNotEmpty && !u.startsWith('http')) {
+                    return showSnack(context, 'The link must start with https://');
+                  }
+                  runAction(context, () => Repo.setPayslipLink(u, _label.text.isEmpty ? 'Fortnox' : _label.text),
+                      success: u.isEmpty ? 'Link removed' : 'Saved');
+                },
+                child: const Text('Save'),
+              ),
+            ]),
+          ]),
+        ),
+      );
 }

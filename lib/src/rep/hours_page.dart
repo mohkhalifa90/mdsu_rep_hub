@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
@@ -72,6 +73,21 @@ class _HoursPageState extends State<HoursPage> {
                       '${sek(d.me.isMember ? halves * d.semester!.halfHourRate : 0)}'),
                   Text('Each activity is rounded up to started half hours, like the Excel time report.',
                       style: Theme.of(context).textTheme.bodySmall),
+                  if (r?.status == 'paid')
+                    FutureBuilder<(String?, String)>(
+                      future: Repo.payslipLink(),
+                      builder: (context, s) => s.data?.$1 == null
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    launchUrl(Uri.parse(s.data!.$1!), mode: LaunchMode.externalApplication),
+                                icon: const Icon(Icons.receipt_long_outlined),
+                                label: Text('See your payslip in ${s.data!.$2}'),
+                              ),
+                            ),
+                    ),
                   if (r?.status == 'returned' && (r?.reviewerComment ?? '').isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

@@ -52,6 +52,23 @@ class Repo {
     }
   }
 
+  /// Payslip link (e.g. Fortnox) and its name, set by the Head of Education
+  static Future<(String?, String)> payslipLink() async {
+    try {
+      final row = await sb.from('app_settings').select('payslip_url, payslip_label').maybeSingle();
+      final url = (row?['payslip_url'] as String?)?.trim();
+      final label = (row?['payslip_label'] as String?)?.trim();
+      return (url == null || url.isEmpty ? null : url, label == null || label.isEmpty ? 'Fortnox' : label);
+    } catch (_) {
+      return (null, 'Fortnox');
+    }
+  }
+
+  static Future<void> setPayslipLink(String? url, String label) => sb
+      .from('app_settings')
+      .update({'payslip_url': url == null || url.trim().isEmpty ? null : url.trim(), 'payslip_label': label.trim()})
+      .eq('id', true);
+
   static Future<void> setSignupOpen(bool open) =>
       sb.from('app_settings').update({'signup_open': open}).eq('id', true);
 

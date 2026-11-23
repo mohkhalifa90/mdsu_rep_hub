@@ -741,9 +741,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   title: Text(n.title, style: TextStyle(fontWeight: n.readAt == null ? FontWeight.bold : null)),
                   subtitle: Text('${n.body}\n${fmtDateTime(n.createdAt)}'),
                   isThreeLine: true,
-                  onTap: n.link == null || widget.onOpen == null
+                  trailing: n.link != null && n.link!.startsWith('http') ? const Icon(Icons.open_in_new, size: 18) : null,
+                  onTap: n.link == null
                       ? null
                       : () {
+                          // a web link (e.g. the payslip in Fortnox) opens in the browser / app
+                          if (n.link!.startsWith('http')) {
+                            launchUrl(Uri.parse(n.link!), mode: LaunchMode.externalApplication);
+                            return;
+                          }
+                          if (widget.onOpen == null) return;
                           Navigator.pop(context);
                           widget.onOpen!(n.link!);
                         },

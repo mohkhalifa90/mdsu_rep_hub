@@ -30,6 +30,9 @@ String councilDetails(Council c) => [
       if (c.directorName != null && c.directorName!.isNotEmpty) c.directorName!,
     ].join(' · ');
 
+/// SIEC, or a council set to 0 seats: it is for everyone, so it has no seats to fill or count
+bool forAllReps(Council c) => c.isSiec || c.seats == 0;
+
 String _num(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
 /// Programmes and central councils: how many seats each has, who sits where, what is vacant.
@@ -95,7 +98,7 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
                 })
             .toList();
         final plans = {for (final c in relevant) c.id: SeatPlan(c, d.roster, now)};
-        final live = relevant.where((c) => !c.cancelled);
+        final live = relevant.where((c) => !c.cancelled && !forAllReps(c));
         final seats = live.fold<int>(0, (a, c) => a + plans[c.id]!.seats);
         final filled = live.fold<int>(0, (a, c) => a + plans[c.id]!.filled);
         final empty = live.where((c) => plans[c.id]!.seats > 0 && plans[c.id]!.filled == 0).length;
@@ -106,6 +109,7 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
         final shown = relevant.where((c) {
           final p = plans[c.id]!;
           if (_city != null && c.city != _city) return false;
+          if (_kpi != null && forAllReps(c)) return false;
           final ok = switch (_kpi) {
             'full' => !c.cancelled && p.seats > 0 && p.vacant == 0,
             'vacant' => !c.cancelled && p.vacant > 0,
@@ -291,7 +295,7 @@ class _ProgrammeTile extends StatelessWidget {
                 Text(c.cancelled ? 'Cancelled' : councilDetails(c), style: t.textTheme.bodySmall),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 4, children: [
-                  if (p.extra > 0) StatusChip('+${p.extra} extra', Colors.red.shade700),
+                  if (p.extra > 0 && !forAllReps(c)) StatusChip('+${p.extra} extra', Colors.red.shade700),
                   if (p.finished.isNotEmpty) StatusChip('${p.finished.length} finished', Colors.blueGrey),
                   if (p.unplaced.isNotEmpty && p.usesCohorts) StatusChip('${p.unplaced.length} without cohort', Colors.orange.shade800),
                   if (c.isProgramme && !p.usesCohorts && c.seats == null)
@@ -300,6 +304,9 @@ class _ProgrammeTile extends StatelessWidget {
               ]),
             ),
             const SizedBox(width: 12),
+            if (forAllReps(c))
+              Text('For all representatives', style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant))
+            else
             SizedBox(
               width: 90,
               child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [

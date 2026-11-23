@@ -32,6 +32,7 @@ class _ReportsPageState extends State<ReportsPage> {
 
   static bool _inFilter(ReportRow r, String f) => switch (f) {
         'notyet' => r.status == 'draft' || r.status == 'returned',
+        'done' => r.isDone, // submitted, approved or paid
         'submitted' => r.status == 'submitted',
         'approved' => r.status == 'approved',
         'paid' => r.status == 'paid',
@@ -177,17 +178,22 @@ class _ReportsPageState extends State<ReportsPage> {
                 label: 'Draft – not submitted yet',
                 value: '${count('notyet')}',
                 sub: 'Tap to list them',
+                selected: _filter == 'notyet',
                 onTap: () => _setFilter('notyet')),
             Kpi(
                 icon: Icons.send_outlined,
                 color: Colors.blue.shade700,
                 label: 'Submitted',
-                value: '${submitted.length} of ${rows.length}'),
+                value: '${submitted.length} of ${rows.length}',
+                sub: 'incl. approved and paid',
+                selected: _filter == 'done',
+                onTap: () => _setFilter('done')),
             Kpi(
                 icon: Icons.fact_check_outlined,
                 color: Colors.orange.shade800,
                 label: 'Awaiting your review',
                 value: '${count('submitted')}',
+                selected: _filter == 'submitted',
                 onTap: () => _setFilter('submitted')),
             Kpi(icon: Icons.schedule, color: Colors.indigo, label: 'Hours submitted',
                 value: '${fmtHours(submitted.fold<int>(0, (a, r) => a + r.minutes))} h'),
@@ -213,6 +219,7 @@ class _ReportsPageState extends State<ReportsPage> {
             for (final (f, label) in const [
               ('all', 'All'),
               ('notyet', 'Draft / returned'),
+              ('done', 'Submitted (all)'),
               ('submitted', 'To review'),
               ('approved', 'Approved'),
               ('paid', 'Paid'),

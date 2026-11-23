@@ -528,6 +528,23 @@ update public.roster set cohort = 'HT' || (extract(year from current_date)::int 
  where email = 'future.rep@student.mdu.se';
 insert into t select '22b profile year follows the roster', (select study_year from public.profiles where full_name = 'Future Rep') = 3;
 
+-- 23. Payslip link on "paid"
+select set_config('request.jwt.claim.sub', '', false);
+set role authenticated;
+select from pg_temp.as_user('Head of Education');
+update public.app_settings set payslip_url = 'https://apps.fortnox.se/', payslip_label = 'Fortnox';
+select public.review_time_report((select report_id from public.report_overview where full_name='Lina Berg'), 'paid');
+select from pg_temp.as_user('Lina Berg');
+insert into t select '23 paid notification links to the payslip',
+  exists (select 1 from public.notifications where title = 'Time report paid' and link = 'https://apps.fortnox.se/'
+          and body like '%payslip%Fortnox%');
+insert into t select '23b reps can read the payslip link', (select payslip_url from public.app_settings) = 'https://apps.fortnox.se/';
+reset role;
+do $$ begin
+  update public.app_settings set payslip_url = 'fortnox.se';
+  insert into t values ('23c link must start with https://', false);
+exception when others then insert into t values ('23c link must start with https://', true); end $$;
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;
