@@ -152,7 +152,16 @@ class Kpi extends StatefulWidget {
   final IconData? icon;
   final Color? color;
   final VoidCallback? onTap;
-  const Kpi({super.key, required this.label, required this.value, this.sub, this.icon, this.color, this.onTap});
+  final bool selected; // used as a filter right now
+  const Kpi(
+      {super.key,
+      required this.label,
+      required this.value,
+      this.sub,
+      this.icon,
+      this.color,
+      this.onTap,
+      this.selected = false});
   @override
   State<Kpi> createState() => _KpiState();
 }
@@ -199,6 +208,9 @@ class _KpiState extends State<Kpi> {
           width: isNarrow(context) ? 155 : 200,
           child: Card(
             elevation: _hover ? 4 : 0,
+            shape: widget.selected
+                ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: color, width: 2))
+                : null,
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
               onTap: widget.onTap,

@@ -518,6 +518,16 @@ insert into t select '21b notification opens the exact post',
   exists (select 1 from public.notifications n join public.messages m on n.link = 'chat/' || m.channel_id || '/' || m.id
           where m.body = 'Link test');
 
+-- 22. Study year from the cohort
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into t select '22 cohort year: HT2025 in Nov 2026 = year 2, VT2026 in Nov 2026 = year 1, HT2024 in Aug 2026 = year 3',
+  public.cohort_year('HT2025', date '2026-11-23') = 2 and public.cohort_year('VT2026', date '2026-11-23') = 1
+  and public.cohort_year('HT2024', date '2026-08-01') = 3 and public.cohort_year('HT2024', date '2026-07-31') = 2;
+update public.roster set cohort = 'HT' || (extract(year from current_date)::int - case when extract(month from current_date) >= 8 then 2 else 3 end)
+ where email = 'future.rep@student.mdu.se';
+insert into t select '22b profile year follows the roster', (select study_year from public.profiles where full_name = 'Future Rep') = 3;
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

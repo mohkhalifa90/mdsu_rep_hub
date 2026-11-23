@@ -15,7 +15,10 @@ class DonutCard extends StatelessWidget {
   final String title;
   final List<Slice> slices;
   final String center;
-  const DonutCard({super.key, required this.title, required this.slices, required this.center});
+  final void Function(int index)? onSlice; // tap a legend row (e.g. to filter)
+  final int? selected; // highlighted legend row
+  const DonutCard(
+      {super.key, required this.title, required this.slices, required this.center, this.onSlice, this.selected});
 
   @override
   Widget build(BuildContext context) {
@@ -44,14 +47,24 @@ class DonutCard extends StatelessWidget {
           Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: t.textTheme.titleSmall),
             const SizedBox(height: 6),
-            for (final s in slices)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 10, height: 10, decoration: BoxDecoration(color: s.color, shape: BoxShape.circle)),
-                  const SizedBox(width: 6),
-                  Text('${s.label}  ${s.value}', style: t.textTheme.bodySmall),
-                ]),
+            for (var i = 0; i < slices.length; i++)
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: onSlice == null ? null : () => onSlice!(i),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: selected == i ? slices[i].color.withValues(alpha: 0.15) : null,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(
+                        width: 10, height: 10, decoration: BoxDecoration(color: slices[i].color, shape: BoxShape.circle)),
+                    const SizedBox(width: 6),
+                    Text('${slices[i].label}  ${slices[i].value}',
+                        style: t.textTheme.bodySmall?.copyWith(fontWeight: selected == i ? FontWeight.bold : null)),
+                  ]),
+                ),
               ),
           ]),
         ]),

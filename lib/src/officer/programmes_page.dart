@@ -43,9 +43,12 @@ class ProgrammesPage extends StatefulWidget {
 
 class _ProgrammesPageState extends State<ProgrammesPage> {
   late Future<_RosterData> _f = _loadRoster();
-  bool _central = false;
+  String _group = 'programmes'; // programmes | central | other (SIEC, academy councils)
   String? _city;
-  bool _vacantOnly = false;
+  String? _kpi; // filter from a number card: full | vacant | nobody | extra | finished
+
+  bool get _central => _group != 'programmes';
+  void _setKpi(String k) => setState(() => _kpi = _kpi == k ? null : k);
   final _search = TextEditingController();
 
   void _reload() => setState(() => _f = _loadRoster());
@@ -85,7 +88,11 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
       builder: (context, d) {
         final now = DateTime.now();
         final relevant = d.councils
-            .where((c) => !c.isSiec && (_central ? !c.isProgramme : c.isProgramme))
+            .where((c) => switch (_group) {
+                  'central' => c.type == 'general',
+                  'other' => c.type == 'academy' || c.isSiec,
+                  _ => c.isProgramme,
+                })
             .toList();
         final plans = {for (final c in relevant) c.id: SeatPlan(c, d.roster, now)};
         final live = relevant.where((c) => !c.cancelled);
@@ -99,7 +106,15 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
         final shown = relevant.where((c) {
           final p = plans[c.id]!;
           if (_city != null && c.city != _city) return false;
-          if (_vacantOnly && (c.cancelled || p.vacant == 0)) return false;
+          final ok = switch (_kpi) {
+            'full' => !c.cancelled && p.seats > 0 && p.vacant == 0,
+            'vacant' => !c.cancelled && p.vacant > 0,
+            'nobody' => !c.cancelled && p.seats > 0 && p.filled == 0,
+            'extra' => p.extra > 0,
+            'finished' => p.finished.isNotEmpty,
+            _ => true,
+          };
+          if (!ok) return false;
           if (q.isEmpty) return true;
           final emails = p.all.map((r) => r.email).join(' ');
           final names = p.all.map((r) => d.byEmail[r.email]?.fullName ?? '').join(' ');
@@ -121,7 +136,8 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
                   onPressed: () => _export(d), icon: const Icon(Icons.download), label: const Text('Download Excel')),
               FilledButton.icon(
                 onPressed: () async {
-                  final id = await showCouncilDialog(context, type: _central ? 'general' : 'program');
+                  final id = await showCouncilDialog(context,
+                      type: switch (_group) { 'central' => 'general', 'other' => 'academy', _ => 'program' });
                   if (id != null) {
                     _reload();
                     widget.onChanged();
@@ -142,33 +158,78 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
                 Slice('Vacant', seats - filled, Colors.red.shade400),
                 Slice('Extra', extra, Colors.purple.shade300),
               ],
+              selected: switch (_kpi) { 'full' => 0, 'vacant' => 1, 'extra' => 2, _ => null },
+              onSlice: (i) => _setKpi(const ['full', 'vacant', 'extra'][i]),
             ),
-            Kpi(icon: Icons.event_seat, color: Colors.green.shade700, label: 'Seats filled', value: '$filled of $seats'),
-            Kpi(icon: Icons.event_seat_outlined, color: Colors.red.shade700, label: 'Vacant seats', value: '${seats - filled}',
-                onTap: () => setState(() => _vacantOnly = true)),
-            Kpi(icon: Icons.person_off_outlined, color: Colors.orange.shade800, label: _central ? 'Councils with nobody' : 'Programmes with nobody', value: '$empty'),
-            Kpi(icon: Icons.group_add_outlined, color: Colors.purple, label: 'Extra representatives', value: '$extra'),
+            Kpi(
+                icon: Icons.event_seat,
+                color: Colors.green.shade700,
+                label: 'Seats filled',
+                value: '$filled of $seats',
+                sub: 'tap: the full ones',
+                selected: _kpi == 'full',
+                onTap: () => _setKpi('full')),
+            Kpi(
+                icon: Icons.event_seat_outlined,
+                color: Colors.red.shade700,
+                label: 'Vacant seats',
+                value: '${seats - filled}',
+                sub: 'tap: where they are',
+                selected: _kpi == 'vacant',
+                onTap: () => _setKpi('vacant')),
+            Kpi(
+                icon: Icons.person_off_outlined,
+                color: Colors.orange.shade800,
+                label: _central ? 'Councils with nobody' : 'Programmes with nobody',
+                value: '$empty',
+                selected: _kpi == 'nobody',
+                onTap: () => _setKpi('nobody')),
+            Kpi(
+                icon: Icons.group_add_outlined,
+                color: Colors.purple,
+                label: 'Extra representatives',
+                value: '$extra',
+                selected: _kpi == 'extra',
+                onTap: () => _setKpi('extra')),
             if (!_central)
-              Kpi(icon: Icons.school_outlined, color: Colors.blueGrey, label: 'Finished their programme', value: '$finished'),
+              Kpi(
+                  icon: Icons.school_outlined,
+                  color: Colors.blueGrey,
+                  label: 'Finished their programme',
+                  value: '$finished',
+                  selected: _kpi == 'finished',
+                  onTap: () => _setKpi('finished')),
           ]),
           const SizedBox(height: 16),
           Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            SegmentedButton<bool>(
+            SegmentedButton<String>(
               showSelectedIcon: false,
               segments: const [
-                ButtonSegment(value: false, label: Text('Programmes')),
-                ButtonSegment(value: true, label: Text('Central councils')),
+                ButtonSegment(value: 'programmes', label: Text('Programmes')),
+                ButtonSegment(value: 'central', label: Text('Central councils')),
+                ButtonSegment(value: 'other', label: Text('Other')),
               ],
-              selected: {_central},
-              onSelectionChanged: (s) => setState(() => _central = s.first),
+              selected: {_group},
+              onSelectionChanged: (s) => setState(() {
+                _group = s.first;
+                _kpi = null;
+              }),
             ),
             if (!_central)
               for (final (v, l) in const [(null, 'Both cities'), ('ESK', 'Eskilstuna'), ('VÄS', 'Västerås')])
                 ChoiceChip(label: Text(l), selected: _city == v, onSelected: (_) => setState(() => _city = v)),
-            FilterChip(
-                label: const Text('Vacant seats only'),
-                selected: _vacantOnly,
-                onSelected: (v) => setState(() => _vacantOnly = v)),
+            if (_kpi != null)
+              InputChip(
+                avatar: const Icon(Icons.filter_alt, size: 16),
+                label: Text(const {
+                  'full': 'Full',
+                  'vacant': 'With vacant seats',
+                  'nobody': 'With nobody',
+                  'extra': 'With extra reps',
+                  'finished': 'With finished reps',
+                }[_kpi]!),
+                onDeleted: () => setState(() => _kpi = null),
+              ),
             SizedBox(
               width: 280,
               child: TextField(
@@ -190,7 +251,8 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
           ]),
           const SizedBox(height: 8),
           Text('${shown.length} shown', style: Theme.of(context).textTheme.bodySmall),
-          if (shown.isEmpty) const EmptyState('Nothing here. Import Dania\'s Excel file or add one.'),
+          if (shown.isEmpty)
+            EmptyState(_kpi != null ? 'Nothing matches this filter' : 'Nothing here. Import Dania\'s Excel file or add one.'),
           for (final c in shown) _ProgrammeTile(council: c, plan: plans[c.id]!, onTap: () => _open(c)),
         ]);
       },
@@ -398,7 +460,12 @@ class _ProgrammeDetailPageState extends State<ProgrammeDetailPage> {
                     ),
                     OutlinedButton.icon(
                       onPressed: () async {
-                        if (await showCouncilDialog(context, council: c) != null) _reload();
+                        final r = await showCouncilDialog(context, council: c);
+                        if (r == '' && context.mounted) {
+                          Navigator.pop(context); // deleted: back to the list
+                        } else if (r != null) {
+                          _reload();
+                        }
                       },
                       icon: const Icon(Icons.edit_outlined),
                       label: const Text('Edit details'),
@@ -623,7 +690,7 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
 
   Widget box(Widget w) => SizedBox(width: 200, child: w);
 
-  final ok = await showDialog<bool>(
+  final ok = await showDialog<String>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setD) => AlertDialog(
@@ -644,6 +711,7 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
                     DropdownMenuItem(value: 'program', child: Text('Programme')),
                     DropdownMenuItem(value: 'general', child: Text('Central council')),
                     DropdownMenuItem(value: 'academy', child: Text('Academy council')),
+                    DropdownMenuItem(value: 'siec', child: Text('SIEC')),
                   ],
                   onChanged: (v) => setD(() => kind = v ?? kind),
                 )),
@@ -711,7 +779,12 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          if (c != null)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'delete'),
+              child: Text('Delete', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
               if (name.text.trim().isEmpty) return setD(() => error = 'Write a name');
@@ -721,7 +794,7 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
               if (seats.text.trim().isNotEmpty && int.tryParse(seats.text.trim()) == null) {
                 return setD(() => error = 'Seats must be a whole number');
               }
-              Navigator.pop(ctx, true);
+              Navigator.pop(ctx, 'save');
             },
             child: const Text('Save'),
           ),
@@ -729,7 +802,19 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
       ),
     ),
   );
-  if (ok != true || !context.mounted) return null;
+  // Delete (only when editing)
+  if (ok == 'delete' && c != null && context.mounted) {
+    if (await confirm(context, 'Delete ${c.name}?',
+            'Its seats, representatives on it and ALL its meetings (with attendance and agenda) are deleted. '
+            'This cannot be undone.',
+            ok: 'Delete') &&
+        context.mounted &&
+        await runAction(context, () => Repo.deleteCouncil(c.id), success: 'Deleted')) {
+      return '';
+    }
+    return null;
+  }
+  if (ok != 'save' || !context.mounted) return null;
   String? id;
   String? t(TextEditingController x) => x.text.trim().isEmpty ? null : x.text.trim();
   final saved = await runAction(context, () async {

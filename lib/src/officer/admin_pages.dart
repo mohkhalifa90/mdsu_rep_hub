@@ -52,6 +52,28 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
             ],
           ),
           const SizedBox(height: 12),
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            Kpi(
+                icon: Icons.loop,
+                color: Colors.orange.shade800,
+                label: 'Open follow-ups',
+                value: '${issues.where((i) => i.isOpen).length}',
+                onTap: () => setState(() => _filter = 'open')),
+            Kpi(
+                icon: Icons.priority_high,
+                color: Colors.red.shade700,
+                label: 'Escalated',
+                value: '${issues.where((i) => i.status == 'escalated').length}',
+                sub: 'no answer for several meetings',
+                onTap: () => setState(() => _filter = 'escalated')),
+            Kpi(
+                icon: Icons.check_circle_outline,
+                color: Colors.green.shade700,
+                label: 'Answered',
+                value: '${issues.where((i) => i.status == 'answered').length}',
+                onTap: () => setState(() => _filter = 'answered')),
+          ]),
+          const SizedBox(height: 12),
           Wrap(spacing: 8, children: [
             for (final f in const [
               ('open', 'Open'),
@@ -132,6 +154,12 @@ class _RepsPageState extends State<RepsPage> {
     if (!mounted) return;
     final byId = {for (final c in d.councils) c.id: c};
     final now = DateTime.now();
+    // the year comes from their programme cohort when there is one (the newest cohort counts)
+    final cohorts = [
+      for (final r in seats)
+        if (byId[r.councilId]?.isProgramme == true && Cohort.parse(r.cohort) != null) Cohort.parse(r.cohort)!
+    ]..sort((a, b) => b.compareTo(a));
+    final autoYear = cohorts.isEmpty ? null : cohorts.first;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -216,12 +244,19 @@ class _RepsPageState extends State<RepsPage> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: year,
-                      decoration: const InputDecoration(labelText: 'Year'),
-                      items: [for (var y = 1; y <= 6; y++) DropdownMenuItem(value: y, child: Text('$y'))],
-                      onChanged: (v) => setD(() => year = v ?? year),
-                    ),
+                    child: autoYear != null
+                        // worked out from the cohort – moves up by itself every August (HT) / January (VT)
+                        ? InputDecorator(
+                            decoration: const InputDecoration(labelText: 'Year (automatic)'),
+                            child: Text('${autoYear.studyYear(now)}  ·  ${autoYear.label}'),
+                          )
+                        : DropdownButtonFormField<int>(
+                            value: year,
+                            decoration: const InputDecoration(
+                                labelText: 'Year', helperText: 'Set a cohort in Programmes & seats to make it automatic'),
+                            items: [for (var y = 1; y <= 6; y++) DropdownMenuItem(value: y, child: Text('$y'))],
+                            onChanged: (v) => setD(() => year = v ?? year),
+                          ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -297,7 +332,7 @@ class _RepsPageState extends State<RepsPage> {
         'full_name': name.text.trim(),
         'program': program.text.trim().isEmpty ? null : program.text.trim(),
         'academy': academy,
-        'study_year': year,
+        if (autoYear == null) 'study_year': year,
         'is_member': member,
         'quiz_passed': quiz,
         'active': active,
@@ -481,6 +516,37 @@ class _RepsPageState extends State<RepsPage> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          Builder(builder: (context) {
+            final reps = people.where((p) => p.role == 'rep');
+            final active = reps.where((p) => p.active).toList();
+            return Wrap(spacing: 12, runSpacing: 12, children: [
+              Kpi(
+                  icon: Icons.people_outline,
+                  label: 'Active representatives',
+                  value: '${active.length}',
+                  onTap: () => setState(() => _filter = 'active')),
+              Kpi(
+                  icon: Icons.card_membership_outlined,
+                  color: Colors.red.shade700,
+                  label: 'Not union members',
+                  value: '${active.where((p) => !p.isMember).length}',
+                  sub: 'among the active'),
+              Kpi(
+                  icon: Icons.quiz_outlined,
+                  color: Colors.orange.shade800,
+                  label: 'Quiz not passed',
+                  value: '${active.where((p) => !p.quizPassed).length}',
+                  sub: 'among the active'),
+              Kpi(
+                  icon: Icons.person_add_alt,
+                  color: Colors.teal,
+                  label: 'Waiting for approval',
+                  value: '${people.where((p) => p.waitingForApproval).length}',
+                  onTap: () => setState(() => _filter = 'waiting')),
+            ]);
+          }),
+          const SizedBox(height: 8),
           ..._waiting(people),
           _filters(people),
           Card(

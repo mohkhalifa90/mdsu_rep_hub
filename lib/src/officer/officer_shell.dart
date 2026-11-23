@@ -6,13 +6,10 @@ import '../push/push_service.dart';
 import '../rep/more_page.dart' show TutoringBoard;
 import '../shared/posts.dart';
 import '../shared/channels_page.dart';
-import '../shared/charts.dart';
-import '../shared/format.dart';
 import '../shared/theme.dart';
 import '../shared/widgets.dart';
 import 'admin_pages.dart';
 import 'agenda_builder_page.dart';
-import 'councils_page.dart';
 import 'reports_page.dart';
 import 'programmes_page.dart';
 import 'today_page.dart';
@@ -29,7 +26,11 @@ class OfficerData {
     return null;
   }
 
-  static Future<OfficerData> load(Profile me) async => OfficerData(me, await Repo.semester(), await Repo.councils());
+  static Future<OfficerData> load(Profile me) async {
+    // study years move up with the date (Aug/Jan): bring them up to date when the panel opens
+    await Repo.refreshStudyYears();
+    return OfficerData(me, await Repo.semester(), await Repo.councils());
+  }
 }
 
 /// Control panel for the Head of Education: side rail on a computer, menu on a phone.
@@ -70,8 +71,6 @@ class _OfficerShellState extends State<OfficerShell> {
     ('followups', Icons.loop, 'Follow-ups'),
     ('reps', Icons.people_outline, 'Representatives'),
     ('programmes', Icons.event_seat_outlined, 'Programmes & seats'),
-    ('councils', Icons.account_balance_outlined, 'Councils'),
-    ('stats', Icons.insights_outlined, 'Statistics'),
     ('tutoring', Icons.school_outlined, 'Tutoring board'),
     ('settings', Icons.settings_outlined, 'Automations & settings'),
   ];
@@ -112,8 +111,6 @@ class _OfficerShellState extends State<OfficerShell> {
         'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
         'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d),
         'programmes' => ProgrammesPage(key: ValueKey('pr$_refresh'), data: d, onChanged: _reload),
-        'councils' => CouncilsPage(key: ValueKey('co$_refresh'), data: d, onChanged: _reload),
-        'stats' => StatisticsPage(key: ValueKey('st$_refresh'), data: d, goTo: _openLink),
         'tutoring' => TutoringBoard(key: ValueKey('tu$_refresh'), me: d.me, focusId: _linkArg),
         'settings' => SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
         _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _openLink),
@@ -208,136 +205,6 @@ class _OfficerShellState extends State<OfficerShell> {
                   Expanded(child: _page(d)),
                 ]),
         );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-class _Stats {
-  final List<ReportRow> reports;
-  final List<Meeting> meetings;
-  final List<Issue> issues;
-  final List<AgendaItem> agenda;
-  _Stats(this.reports, this.meetings, this.issues, this.agenda);
-}
-
-/// The numbers: KPIs, who has not submitted, upcoming meetings.
-class StatisticsPage extends StatefulWidget {
-  final OfficerData data;
-  final void Function(String page) goTo;
-  const StatisticsPage({super.key, required this.data, required this.goTo});
-  @override
-  State<StatisticsPage> createState() => _StatisticsPageState();
-}
-
-class _StatisticsPageState extends State<StatisticsPage> {
-  late Future<_Stats> _f = _load();
-  Future<_Stats> _load() async =>
-      _Stats(await Repo.reportOverview(), await Repo.meetings(), await Repo.issues(), await Repo.agendaItems());
-
-  @override
-  Widget build(BuildContext context) {
-    final s = widget.data.semester;
-    return Loader<_Stats>(
-      future: _f,
-      onRetry: () => setState(() => _f = _load()),
-      builder: (context, o) {
-        final done = o.reports.where((r) => r.isDone).length;
-        final minutes = o.reports.fold<int>(0, (a, r) => a + r.minutes);
-        final payout = o.reports.fold<int>(0, (a, r) => a + r.amount);
-        final notSubmitted = o.reports.where((r) => !r.isDone).toList();
-        final openIssues = o.issues.where((i) => i.isOpen).length;
-        final upcoming = o.meetings.where((m) => !m.isPast).take(6).toList();
-        return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
-          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            DonutCard(
-              title: 'Time reports',
-              center: '$done\nof ${o.reports.length}',
-              slices: [
-                Slice('Not submitted', o.reports.where((r) => r.status == 'draft' || r.status == 'returned').length,
-                    Colors.grey.shade400),
-                Slice('To review', o.reports.where((r) => r.status == 'submitted').length, Colors.orange.shade600),
-                Slice('Approved', o.reports.where((r) => r.status == 'approved').length, Colors.blue.shade500),
-                Slice('Paid', o.reports.where((r) => r.status == 'paid').length, Colors.green.shade600),
-              ],
-            ),
-            Kpi(icon: Icons.people_outline, label: 'Active representatives', value: '${o.reports.length}',
-                sub: '${o.reports.where((r) => !r.isMember).length} not union members'),
-            Kpi(icon: Icons.task_alt, color: Colors.green.shade700, label: 'Time reports submitted', value: '$done of ${o.reports.length}'),
-            Kpi(icon: Icons.schedule, color: Colors.indigo, label: 'Hours logged', value: '${fmtHours(minutes)} h', sub: 'live, incl. drafts'),
-            Kpi(icon: Icons.payments_outlined, color: Colors.teal, label: 'Estimated payout', value: sek(payout),
-                sub: s == null ? null : '${s.hourlyRate} SEK/h · ${s.halfHourRate} per started ½ h'),
-            if (s != null)
-              Kpi(icon: Icons.alarm, color: Colors.orange.shade800, label: 'Days to deadline', value: '${daysUntil(s.reportDeadline)}', sub: fmtDateY(s.reportDeadline)),
-            Kpi(icon: Icons.loop, color: Colors.red.shade700, label: 'Open follow-ups', value: '$openIssues', onTap: () => widget.goTo('followups'),
-                sub: '${o.issues.where((i) => i.status == 'escalated').length} escalated'),
-          ]),
-          LayoutBuilder(builder: (context, c) {
-            final left = Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SectionTitle('Not submitted yet',
-                      trailing: FilledButton.tonalIcon(
-                        onPressed: () async {
-                          try {
-                            final n = await Repo.remindUnsubmitted();
-                            if (context.mounted) showSnack(context, 'Reminder sent to $n representatives');
-                          } catch (e) {
-                            if (context.mounted) showSnack(context, errorText(e));
-                          }
-                        },
-                        icon: const Icon(Icons.notifications_active_outlined),
-                        label: const Text('Send reminder'),
-                      )),
-                  if (o.reports.isEmpty)
-                    const EmptyState('No active representatives yet')
-                  else if (notSubmitted.isEmpty)
-                    const EmptyState('Everyone has submitted 🎉'),
-                  for (final r in notSubmitted)
-                    ListTile(
-                      dense: true,
-                      title: Text(r.fullName),
-                      subtitle: Text(r.program ?? ''),
-                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        StatusChip.report(r.status),
-                        const SizedBox(width: 12),
-                        Text(fmtMinutes(r.minutes)),
-                      ]),
-                    ),
-                ]),
-              ),
-            );
-            final right = Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const SectionTitle('Upcoming meetings'),
-                  if (upcoming.isEmpty) const EmptyState('No meetings planned'),
-                  for (final m in upcoming)
-                    ListTile(
-                      dense: true,
-                      title: Text(m.title),
-                      subtitle: Text('${fmtDateTime(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
-                      trailing: Text('${o.agenda.where((a) => a.meetingId == m.id).length} rep items'),
-                      onTap: () => widget.goTo('agenda/${m.id}'),
-                    ),
-                ]),
-              ),
-            );
-            return Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: c.maxWidth > 900
-                  ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Expanded(child: left),
-                      const SizedBox(width: 12),
-                      Expanded(child: right),
-                    ])
-                  : Column(children: [left, right]),
-            );
-          }),
-        ]);
       },
     );
   }

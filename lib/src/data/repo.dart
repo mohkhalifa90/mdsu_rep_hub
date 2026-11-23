@@ -142,6 +142,15 @@ class Repo {
     return id;
   }
 
+  /// Study years from the cohorts (they move up in August/January)
+  static Future<void> refreshStudyYears() async {
+    try {
+      await sb.rpc('refresh_study_years');
+    } catch (_) {
+      // not critical
+    }
+  }
+
   static Future<List<RosterEntry>> roster() async =>
       _list(await sb.from('roster').select().order('cohort'), RosterEntry.fromMap);
 

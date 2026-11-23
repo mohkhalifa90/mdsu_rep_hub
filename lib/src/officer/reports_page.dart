@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../shared/charts.dart';
 import '../shared/format.dart';
 import '../shared/widgets.dart';
 import 'excel_export.dart';
@@ -38,6 +39,20 @@ class _ReportsPageState extends State<ReportsPage> {
       };
 
   void _setFilter(String f) => setState(() => _filter = _filter == f ? 'all' : f);
+
+  /// Everyone who has not submitted gets a notification
+  Future<void> _remind() async {
+    if (!await confirm(context, 'Send reminder?',
+        'Every representative who has not submitted their time report gets a notification.',
+        ok: 'Send')) {
+      return;
+    }
+    if (!mounted) return;
+    await runAction(context, () async {
+      final n = await Repo.remindUnsubmitted();
+      if (mounted) showSnack(context, 'Reminder sent to $n representatives');
+    });
+  }
 
   void _reload() => setState(() {
         _f = Repo.reportOverview();
@@ -138,12 +153,30 @@ class _ReportsPageState extends State<ReportsPage> {
           const SizedBox(height: 12),
           _Steps(rows: rows, selected: _filter, onTap: _setFilter),
           const SizedBox(height: 12),
-          Wrap(spacing: 12, runSpacing: 12, children: [
+          Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            DonutCard(
+              title: 'Time reports',
+              center: '${submitted.length}\nof ${rows.length}',
+              slices: [
+                Slice('Not submitted', count('notyet'), Colors.grey.shade400),
+                Slice('To review', count('submitted'), Colors.orange.shade600),
+                Slice('Approved', count('approved'), Colors.blue.shade500),
+                Slice('Paid', count('paid'), Colors.green.shade600),
+              ],
+            ),
+            if (widget.data.semester != null)
+              Kpi(
+                  icon: Icons.alarm,
+                  color: Colors.red.shade700,
+                  label: 'Days to deadline',
+                  value: '${daysUntil(widget.data.semester!.reportDeadline)}',
+                  sub: fmtDateY(widget.data.semester!.reportDeadline)),
             Kpi(
                 icon: Icons.edit_note,
                 color: Colors.blueGrey,
                 label: 'Draft – not submitted yet',
                 value: '${count('notyet')}',
+                sub: 'Tap to list them',
                 onTap: () => _setFilter('notyet')),
             Kpi(
                 icon: Icons.send_outlined,
@@ -188,6 +221,12 @@ class _ReportsPageState extends State<ReportsPage> {
                 label: Text('$label (${count(f)})'),
                 selected: _filter == f,
                 onSelected: (_) => setState(() => _filter = f),
+              ),
+            if (count('notyet') > 0)
+              FilledButton.tonalIcon(
+                onPressed: _remind,
+                icon: const Icon(Icons.notifications_active_outlined),
+                label: Text('Send reminder to ${count('notyet')}'),
               ),
           ]),
           const SizedBox(height: 8),
