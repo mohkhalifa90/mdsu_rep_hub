@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/roster.dart';
+import '../shared/avatars.dart';
 import '../shared/format.dart';
 import '../shared/posts.dart';
 import '../shared/theme.dart';
@@ -18,7 +19,9 @@ class _Today {
   final List<Profile> people;
   final List<Post> posts;
   final List<RosterEntry> roster;
-  _Today(this.reports, this.meetings, this.issues, this.agenda, this.attendance, this.people, this.posts, this.roster);
+  final Map<String, dynamic> week; // last 7 days vs the 7 before
+  _Today(this.reports, this.meetings, this.issues, this.agenda, this.attendance, this.people, this.posts, this.roster,
+      this.week);
 }
 
 /// The officer's start page: what needs attention today, quick actions, next meetings
@@ -42,6 +45,7 @@ class _TodayPageState extends State<TodayPage> {
         await Repo.profiles(),
         await Repo.posts(limit: 3),
         await Repo.roster(),
+        await Repo.weeklySummary().catchError((_) => <String, dynamic>{}),
       );
   void _reload() => setState(() => _f = _load());
 
@@ -150,7 +154,7 @@ class _TodayPageState extends State<TodayPage> {
                     for (final p in waitingList.take(5))
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.person_add_alt),
+                        leading: UserAvatar(id: p.id, name: p.fullName),
                         title: Text(p.fullName),
                         subtitle: Text(p.email ?? ''),
                         trailing: Wrap(spacing: 4, children: [
@@ -234,6 +238,7 @@ class _TodayPageState extends State<TodayPage> {
             const SizedBox(height: 16),
             actions,
             const SizedBox(height: 16),
+            if (o.week.isNotEmpty) ...[_weekly(o.week), const SizedBox(height: 12)],
             LayoutBuilder(builder: (context, c) {
               if (c.maxWidth < 900) return Column(children: [approvals, attention, meetings, posts]);
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -246,6 +251,69 @@ class _TodayPageState extends State<TodayPage> {
         );
       },
     );
+  }
+
+  /// The last 7 days, with the change from the week before
+  Widget _weekly(Map<String, dynamic> w) {
+    final t = Theme.of(context);
+    (int, int) pair(String k) {
+      final v = w[k];
+      if (v is List && v.length == 2) return ((v[0] as num).toInt(), (v[1] as num).toInt());
+      return (0, 0);
+    }
+
+    Widget tile(String key, IconData icon, String label, String page, Color color) {
+      final (now, before) = pair(key);
+      final diff = now - before;
+      final trend = diff == 0
+          ? Text('same as last week', style: t.textTheme.labelSmall)
+          : Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(diff > 0 ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 13, color: diff > 0 ? Colors.green.shade700 : Colors.red.shade700),
+              Text(' ${diff.abs()} vs last week',
+                  style: t.textTheme.labelSmall?.copyWith(color: diff > 0 ? Colors.green.shade700 : Colors.red.shade700)),
+            ]);
+      return SizedBox(
+        width: 172,
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => widget.goTo(page),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(icon, size: 18, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(label, style: t.textTheme.labelMedium, overflow: TextOverflow.ellipsis)),
+                ]),
+                const SizedBox(height: 6),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: now.toDouble()),
+                  duration: const Duration(milliseconds: 700),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, v, __) =>
+                      Text('${v.round()}', style: t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                trend,
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const SectionTitle('Last 7 days'),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        tile('reports', Icons.send_outlined, 'Reports sent', 'reports', Colors.indigo),
+        tile('comments', Icons.forum_outlined, 'Rep comments', 'chat', Colors.teal),
+        tile('meetings', Icons.event_available_outlined, 'Meetings held', 'agenda', Colors.blue),
+        tile('answered', Icons.mark_chat_read_outlined, 'Follow-ups answered', 'followups', Colors.green),
+        tile('new_reps', Icons.person_add_alt, 'New reps', 'reps', Colors.orange),
+      ]),
+    ]);
   }
 
   Widget _meetingTile(Meeting m, _Today o) {

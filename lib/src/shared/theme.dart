@@ -1,9 +1,11 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/repo.dart';
+import 'avatars.dart';
 import 'widgets.dart';
 
 const mdsuBlue = Color(0xFF2F5AAE);
@@ -42,7 +44,10 @@ class AppTheme extends ChangeNotifier {
 
   Color get seed => accents[accent]?.$2 ?? mdsuBlue;
 
-  void applyFrom(Map<String, dynamic>? prefs) {
+  String myName = ''; // for the initials when there is no photo
+
+  void applyFrom(Map<String, dynamic>? prefs, {String name = ''}) {
+    myName = name;
     final p = prefs ?? const {};
     mode = switch (p['mode']) { 'light' => ThemeMode.light, 'dark' => ThemeMode.dark, _ => ThemeMode.system };
     accent = accents.containsKey(p['accent']) ? p['accent'] as String : 'blue';
@@ -297,6 +302,32 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
   final th = AppTheme.instance;
   bool _uploading = false;
 
+  bool _photoBusy = false;
+
+  Future<void> _photo({bool remove = false}) async {
+    Uint8List? bytes;
+    String? name;
+    if (!remove) {
+      final r = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      final f = r?.files.single;
+      if (f?.bytes == null) return;
+      if (f!.size > 5 * 1024 * 1024) {
+        if (mounted) showSnack(context, 'Pictures up to 5 MB');
+        return;
+      }
+      bytes = f.bytes;
+      name = f.name;
+    }
+    setState(() => _photoBusy = true);
+    try {
+      final url = await Repo.setAvatar(name, bytes);
+      Avatars.instance.set(Repo.uid, url);
+    } catch (e) {
+      if (mounted) showSnack(context, errorText(e));
+    }
+    if (mounted) setState(() => _photoBusy = false);
+  }
+
   Future<void> _upload() async {
     final r = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
     final f = r?.files.single;
@@ -332,6 +363,31 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
           const SizedBox(height: 4),
           Text('Saved to your account – the same on your phone and computer.', style: t.textTheme.bodySmall),
           const SizedBox(height: 16),
+          Text('Profile photo', style: t.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          ListenableBuilder(
+            listenable: Avatars.instance,
+            builder: (context, _) {
+              final has = Avatars.instance.of(Repo.uid) != null;
+              return Row(children: [
+                UserAvatar(id: Repo.uid, name: th.myName, radius: 28),
+                const SizedBox(width: 16),
+                if (_photoBusy)
+                  const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                else ...[
+                  FilledButton.tonalIcon(
+                      onPressed: _photo,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: Text(has ? 'Change photo' : 'Add photo')),
+                  if (has) ...[
+                    const SizedBox(width: 8),
+                    TextButton(onPressed: () => _photo(remove: true), child: const Text('Remove')),
+                  ],
+                ],
+              ]);
+            },
+          ),
+          const SizedBox(height: 20),
           Text('Mode', style: t.textTheme.titleSmall),
           const SizedBox(height: 8),
           SegmentedButton<ThemeMode>(

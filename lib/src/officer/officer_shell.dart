@@ -241,11 +241,11 @@ class _OfficerShellState extends State<OfficerShell> {
                 )
               : null,
           body: phone
-              ? _page(d)
+              ? pageSwitch(_tab, _page(d))
               : Row(children: [
                   rail(),
                   const VerticalDivider(width: 1),
-                  Expanded(child: _page(d)),
+                  Expanded(child: pageSwitch(_tab, _page(d))),
                 ]),
           ),
             ),

@@ -66,6 +66,8 @@ String sek(int amount) => '${_sek.format(amount)} SEK';
 String fmtDate(DateTime d) => DateFormat('d MMM').format(d);
 String fmtDateY(DateTime d) => DateFormat('d MMM y').format(d);
 String fmtDateTime(DateTime d) => DateFormat('d MMM, HH:mm').format(d);
+String fmtTime(DateTime d) => DateFormat('HH:mm').format(d);
+String fmtMonth(DateTime d) => DateFormat('MMM').format(d).toUpperCase();
 
 int daysUntil(DateTime d) {
   final now = DateTime.now();

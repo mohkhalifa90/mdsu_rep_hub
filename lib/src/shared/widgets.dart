@@ -533,3 +533,19 @@ class PageIntro extends StatelessWidget {
 
 /// True on a phone-sized screen.
 bool isNarrow(BuildContext context) => MediaQuery.of(context).size.width < 720;
+
+
+/// Switching between the main pages: a short fade with a small upward slide.
+Widget pageSwitch(Object key, Widget child) => AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (c, a) => FadeTransition(
+        opacity: a,
+        child: SlideTransition(
+            position: Tween(begin: const Offset(0, 0.012), end: Offset.zero).animate(a), child: c),
+      ),
+      layoutBuilder: (current, previous) =>
+          Stack(fit: StackFit.expand, children: [...previous, if (current != null) current]),
+      child: KeyedSubtree(key: ValueKey(key), child: child),
+    );

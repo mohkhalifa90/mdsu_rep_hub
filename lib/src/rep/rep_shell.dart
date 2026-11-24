@@ -148,7 +148,7 @@ class _RepShellState extends State<RepShell> {
             title: Text(titles[_tab]),
             actions: [NotificationBell(onOpen: (l) => _openLink(l, d))],
           ),
-          body: SafeArea(child: pages[_tab]),
+          body: SafeArea(child: pageSwitch(_tab, pages[_tab])),
           bottomNavigationBar: ListenableBuilder(
             listenable: Badges.instance,
             builder: (context, _) => NavigationBar(
@@ -263,7 +263,26 @@ class _RepHomePageState extends State<RepHomePage> {
                   'Send topics by ${fmtDate(m.inputDeadline)}', 'Open', () => widget.openMeeting(m.id)));
             }
           }
+          // the report deadline is coming and the report is not sent yet
+          final sem = d.semester;
+          if (sem != null && (r?.status ?? 'draft') == 'draft') {
+            final left = daysUntil(sem.reportDeadline);
+            if (left >= 0 && left <= 14) {
+              todos.insert(0, _todo(context, Icons.send_outlined, 'Send your time report',
+                  '$left day${left == 1 ? '' : 's'} left · ${fmtHours(minutes)} h logged', 'Open', () => widget.goTo(1),
+                  urgent: left <= 3));
+            }
+          }
+          if (!d.me.quizPassed) {
+            todos.add(_todo(context, Icons.quiz_outlined, 'Pass this semester\'s quiz',
+                'Needed to be paid · ask the Head of Education for the link', 'OK', () {}, showAction: false));
+          }
+          if (!d.me.isMember) {
+            todos.add(_todo(context, Icons.card_membership_outlined, 'Become a union member',
+                'Only members are paid for their hours', 'OK', () {}, showAction: false));
+          }
           final upcoming = h.meetings.where((m) => !m.isPast).take(4).toList();
+          final next = upcoming.isEmpty ? null : upcoming.first;
 
           final first = widget.data.me.fullName.trim().split(' ').first;
           return ListView(padding: const EdgeInsets.all(16), children: [
@@ -274,6 +293,29 @@ class _RepHomePageState extends State<RepHomePage> {
                   .join(' · '),
             ),
             const SizedBox(height: 12),
+            // ---- what needs me now ----
+            if (todos.isEmpty)
+              Card(
+                color: Color.alphaBlend(softBg(context, Colors.green), t.cardColor),
+                child: const ListTile(
+                  leading: Icon(Icons.task_alt, color: Colors.green),
+                  title: Text('You\'re all caught up'),
+                  subtitle: Text('Nothing needs you right now'),
+                ),
+              )
+            else ...[
+              SectionTitle('Needs your attention (${todos.length})'),
+              ...todos.take(_showAllTodos ? todos.length : 3),
+              if (todos.length > 3)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                      onPressed: () => setState(() => _showAllTodos = !_showAllTodos),
+                      child: Text(_showAllTodos ? 'Show less' : 'Show all ${todos.length}')),
+                ),
+            ],
+            if (next != null) ...[const SizedBox(height: 4), _nextMeeting(context, next, h.attendance[next.id])],
+            const SizedBox(height: 8),
             Card(
               color: t.colorScheme.primary,
               child: Padding(
@@ -317,7 +359,6 @@ class _RepHomePageState extends State<RepHomePage> {
                     padding: EdgeInsets.all(10), child: Text('Log time – meeting, task, material…')),
               ),
             const WebPushCard(),
-            if (todos.isNotEmpty) ...[const SectionTitle('To do'), ...todos],
             if (h.posts.isNotEmpty) ...[
               SectionTitle('From the Head of Education',
                   trailing: TextButton(
@@ -328,8 +369,8 @@ class _RepHomePageState extends State<RepHomePage> {
               for (final p in h.posts.take(2)) PostCard(post: p),
             ],
             const SectionTitle('Upcoming meetings'),
-            if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
-            for (final m in upcoming)
+            if (upcoming.isEmpty) const EmptyState('No upcoming meetings', icon: Icons.event_available_outlined),
+            for (final m in upcoming.skip(1))
               Card(
                 child: ListTile(
                   title: Text(m.title),
@@ -346,13 +387,71 @@ class _RepHomePageState extends State<RepHomePage> {
     );
   }
 
-  Widget _todo(BuildContext context, IconData icon, String title, String sub, String action, VoidCallback onTap) =>
-      Card(
-        child: ListTile(
-          leading: Icon(icon, color: Colors.orange.shade800),
-          title: Text(title),
-          subtitle: Text(sub),
-          trailing: TextButton(onPressed: onTap, child: Text(action)),
+  bool _showAllTodos = false;
+
+  Widget _todo(BuildContext context, IconData icon, String title, String sub, String action, VoidCallback onTap,
+      {bool urgent = false, bool showAction = true}) {
+    final c = urgent ? Colors.red.shade700 : Colors.orange.shade800;
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(backgroundColor: c.withValues(alpha: 0.12), child: Icon(icon, color: c, size: 20)),
+        title: Text(title),
+        subtitle: Text(sub),
+        onTap: showAction ? onTap : null,
+        trailing: showAction ? TextButton(onPressed: onTap, child: Text(action)) : null,
+      ),
+    );
+  }
+
+  /// The next meeting, with a countdown and my answer
+  Widget _nextMeeting(BuildContext context, Meeting m, String? mode) {
+    final t = Theme.of(context);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(m.startsAt.year, m.startsAt.month, m.startsAt.day);
+    final days = day.difference(today).inDays;
+    final when = days == 0 ? 'Today' : days == 1 ? 'Tomorrow' : 'In $days days';
+    final (label, color) = switch (mode) {
+      'offline' => ('In the room', Colors.green),
+      'online' => ('Online', Colors.blue),
+      'absent' => ('Not attending', Colors.grey),
+      _ => ('Not answered', Colors.orange),
+    };
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => widget.openMeeting(m.id),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            Container(
+              width: 58,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                  color: t.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
+              child: Column(children: [
+                Text(fmtMonth(m.startsAt), style: t.textTheme.labelSmall),
+                Text('${m.startsAt.day}',
+                    style: t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              ]),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('NEXT MEETING · ${when.toUpperCase()}',
+                    style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.primary, letterSpacing: 0.6)),
+                const SizedBox(height: 2),
+                Text(m.title, style: t.textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text('${fmtTime(m.startsAt)}${m.location == null ? '' : ' · ${m.location}'}',
+                    style: t.textTheme.bodySmall),
+                const SizedBox(height: 6),
+                StatusChip(label, color),
+              ]),
+            ),
+            const Icon(Icons.chevron_right),
+          ]),
         ),
-      );
+      ),
+    );
+  }
 }

@@ -10,6 +10,7 @@ import 'badges.dart';
 import 'format.dart';
 import 'interactions.dart';
 import 'theme.dart';
+import 'avatars.dart';
 import 'widgets.dart';
 
 /// Teams-like channels. Used by both the rep app and the officer app.
@@ -453,10 +454,18 @@ class _ChatViewState extends State<ChatView> {
     final canDelete = mine || _officer;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
+        UserAvatar(id: m.authorId, name: widget.names[m.authorId] ?? '?', radius: m.parentId == null ? 16 : 12),
+        const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            '${widget.names[m.authorId] ?? 'Someone'} · ${fmtDateTime(m.createdAt)}'
-            '${m.isAnnouncement ? ' · announcement' : ''}${m.editedAt != null ? ' · edited' : ''}',
+          child: Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                  text: widget.names[m.authorId] ?? 'Someone',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              TextSpan(
+                  text: ' · ${fmtDateTime(m.createdAt)}'
+                      '${m.isAnnouncement ? ' · announcement' : ''}${m.editedAt != null ? ' · edited' : ''}'),
+            ]),
             style: t.textTheme.labelSmall,
           ),
         ),

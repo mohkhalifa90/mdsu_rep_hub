@@ -7,6 +7,7 @@ import 'src/data/repo.dart';
 import 'src/officer/officer_shell.dart';
 import 'src/push/push_service.dart';
 import 'src/rep/rep_shell.dart';
+import 'src/shared/avatars.dart';
 import 'src/shared/theme.dart';
 import 'src/shared/widgets.dart';
 
@@ -69,7 +70,10 @@ String? _lookFor; // whose appearance is applied
 void _applyLook(Profile? me) {
   if (_lookFor == me?.id) return;
   _lookFor = me?.id;
-  WidgetsBinding.instance.addPostFrameCallback((_) => AppTheme.instance.applyFrom(me?.uiPrefs));
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    AppTheme.instance.applyFrom(me?.uiPrefs, name: me?.fullName ?? '');
+    if (me != null) Avatars.instance.load();
+  });
 }
 
 /// Shows the login page, or the right app for the signed-in user's role.

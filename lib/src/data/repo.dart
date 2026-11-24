@@ -482,6 +482,29 @@ class Repo {
   static Future<void> saveMyPrefs(Map<String, dynamic> prefs) =>
       sb.from('profiles').update({'ui_prefs': prefs}).eq('id', uid);
 
+  /// Profile photo → public URL, saved on my profile (null removes it)
+  static Future<String?> setAvatar(String? fileName, Uint8List? bytes) async {
+    String? url;
+    if (bytes != null) {
+      final ext = (fileName ?? '').contains('.') ? fileName!.split('.').last.toLowerCase() : 'jpg';
+      final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await sb.storage.from('avatars').uploadBinary(path, bytes);
+      url = sb.storage.from('avatars').getPublicUrl(path);
+    }
+    await sb.from('profiles').update({'avatar_url': url}).eq('id', uid);
+    return url;
+  }
+
+  /// Everyone's profile photo (id → url)
+  static Future<Map<String, String>> avatars() async {
+    final rows = await sb.from('member_names').select('id, avatar_url').not('avatar_url', 'is', null);
+    return {for (final r in rows as List) r['id'] as String: r['avatar_url'] as String};
+  }
+
+  /// Last 7 days vs the 7 days before (Head of Education)
+  static Future<Map<String, dynamic>> weeklySummary() async =>
+      ((await sb.rpc('weekly_summary')) as Map).cast<String, dynamic>();
+
   /// My own banner picture → public URL
   static Future<String> uploadBanner(String fileName, Uint8List bytes) async {
     final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'jpg';

@@ -8,6 +8,7 @@ import '../shared/format.dart';
 import '../shared/widgets.dart';
 import 'agenda_docx.dart';
 import 'attendance_export.dart';
+import 'meetings_calendar.dart';
 import 'officer_shell.dart';
 
 /// Meetings: every meeting, upcoming and earlier. Opening one shows attendance, the reps'
@@ -23,6 +24,7 @@ class AgendaBuilderPage extends StatefulWidget {
 class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
   late Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _f = _load();
   bool _deepLinkDone = false;
+  bool _calendar = false; // list or month view
 
   Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _load() async =>
       (await Repo.meetings(), await Repo.memberNames(), await Repo.agendaItems(), await Repo.attendance());
@@ -69,11 +71,16 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
     );
   }
 
-  Future<void> _addMeeting() async {
+  Future<void> _addMeeting([DateTime? day]) async {
     final d = widget.data;
-    String council = d.councils.first.id;
+    // SIEC first (most meetings), then A–Z
+    final councils = [...d.councils]..sort((a, b) {
+        if (a.isSiec != b.isSiec) return a.isSiec ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    String council = councils.first.id;
     final title = TextEditingController(), loc = TextEditingController(text: 'Teams');
-    DateTime date = DateTime.now().add(const Duration(days: 21));
+    DateTime date = day ?? DateTime.now().add(const Duration(days: 21));
     TimeOfDay time = const TimeOfDay(hour: 13, minute: 15);
     final ok = await showDialog<bool>(
       context: context,
@@ -83,12 +90,18 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
           content: SizedBox(
             width: 440,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<String>(
-                value: council,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Council'),
-                items: [for (final c in d.councils) DropdownMenuItem(value: c.id, child: Text(c.name))],
-                onChanged: (v) => setD(() => council = v ?? council),
+              DropdownMenu<String>(
+                initialSelection: council,
+                expandedInsets: EdgeInsets.zero,
+                label: const Text('Council (type to search)'),
+                enableFilter: true,
+                enableSearch: true,
+                requestFocusOnTap: true,
+                menuHeight: 320,
+                dropdownMenuEntries: [
+                  for (final c in councils) DropdownMenuEntry<String>(value: c.id, label: c.name),
+                ],
+                onSelected: (v) => setD(() => council = v ?? council),
               ),
               const SizedBox(height: 10),
               TextField(controller: title, decoration: const InputDecoration(labelText: 'Title (e.g. Program council CS #3)')),
@@ -173,6 +186,31 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
             ],
           ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, icon: Icon(Icons.view_list_outlined), label: Text('List')),
+                ButtonSegment(value: true, icon: Icon(Icons.calendar_month_outlined), label: Text('Month')),
+              ],
+              selected: {_calendar},
+              onSelectionChanged: (v) => setState(() => _calendar = v.first),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_calendar)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: MeetingsCalendar(
+                  meetings: meetings,
+                  councilName: (id) => widget.data.council(id)?.name ?? '',
+                  onOpen: (m) => _open(m, names),
+                  onAdd: _addMeeting,
+                ),
+              ),
+            )
+          else ...[
           const SectionTitle('Upcoming'),
           if (upcoming.isEmpty)
             EmptyState('No upcoming meetings. Add one – its council gets a notification.',
@@ -181,6 +219,7 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
           SectionTitle('Earlier meetings (${past.length})'),
           if (past.isEmpty) const EmptyState('No earlier meetings'),
           for (final m in past) _tile(m, names, items, att),
+          ],
         ]);
       },
     );

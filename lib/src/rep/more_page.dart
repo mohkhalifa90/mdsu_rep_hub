@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import '../shared/avatars.dart';
 import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/interactions.dart';
@@ -224,8 +225,12 @@ class _TutoringBoardState extends State<TutoringBoard> {
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(p.kind == 'offer' ? Icons.volunteer_activism_outlined : Icons.help_outline,
-                  color: p.kind == 'offer' ? Colors.green : Colors.blue),
+              Badge(
+                backgroundColor: p.kind == 'offer' ? Colors.green : Colors.blue,
+                label: Icon(p.kind == 'offer' ? Icons.volunteer_activism : Icons.question_mark,
+                    size: 10, color: Colors.white),
+                child: UserAvatar(id: p.authorId, name: names[p.authorId] ?? '?', radius: 18),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -333,7 +338,7 @@ class DirectoryPage extends StatelessWidget {
             : ListView(children: [
                 for (final r in rows)
                   ListTile(
-                    leading: CircleAvatar(child: Text(_initial((r['full_name'] ?? '') as String))),
+                    leading: UserAvatar(id: r['id'] as String?, name: (r['full_name'] ?? '') as String),
                     title: Text((r['full_name'] ?? '') as String),
                     subtitle: Text('${r['program'] ?? ''} · ${r['academy'] ?? ''} · year ${r['study_year'] ?? '-'}\n'
                         '${r['email'] ?? ''}'),
@@ -343,7 +348,6 @@ class DirectoryPage extends StatelessWidget {
       );
 }
 
-String _initial(String name) => name.trim().isEmpty ? '?' : name.trim().substring(0, 1).toUpperCase();
 
 class ProfilePage extends StatefulWidget {
   final RepData data;
@@ -389,6 +393,17 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     final me = widget.data.me;
     return ListView(padding: const EdgeInsets.all(16), children: [
+      Center(
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => showAppearanceSheet(context),
+          child: Stack(alignment: Alignment.bottomRight, children: [
+            UserAvatar(id: me.id, name: me.fullName, radius: 44),
+            const CircleAvatar(radius: 14, child: Icon(Icons.photo_camera_outlined, size: 16)),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 16),
       TextField(controller: _name, decoration: const InputDecoration(labelText: 'Full name')),
       const SizedBox(height: 8),
       Align(

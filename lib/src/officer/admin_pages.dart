@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/roster.dart';
+import '../shared/avatars.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/theme.dart';
@@ -169,7 +170,11 @@ class _RepsPageState extends State<RepsPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
+          title: Row(children: [
+            UserAvatar(id: p.id, name: p.fullName, radius: 22),
+            const SizedBox(width: 12),
+            Expanded(child: Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName)),
+          ]),
           content: SizedBox(
             width: 560,
             child: SingleChildScrollView(
@@ -593,6 +598,8 @@ class _RepsPageState extends State<RepsPage> {
                       color: p.active ? null : WidgetStatePropertyAll(Theme.of(context).colorScheme.surfaceContainerHighest),
                       cells: [
                         DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                          UserAvatar(id: p.id, name: p.fullName, radius: 13),
+                          const SizedBox(width: 8),
                           Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
                           if (p.waitingForApproval) ...[
                             const SizedBox(width: 6),

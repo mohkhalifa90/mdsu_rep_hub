@@ -556,6 +556,21 @@ insert into t select '24b reaction knows its channel',
 select from pg_temp.as_user('Head of Education');
 insert into t select '24c officer badges have reports and signups', (select public.my_badges() ? 'reports' and public.my_badges() ? 'signups');
 
+-- 25. Profile photos and the weekly summary
+set role authenticated;
+select from pg_temp.as_user('Ahmed Saleh');
+update public.profiles set avatar_url = 'https://example.com/a.jpg' where id = auth.uid();
+insert into t select '25 rep sets own photo, visible in member_names',
+  (select avatar_url from public.member_names where full_name = 'Ahmed Saleh') = 'https://example.com/a.jpg';
+do $$ begin
+  perform public.weekly_summary();
+  insert into t values ('25b reps cannot read the weekly summary', false);
+exception when others then insert into t values ('25b reps cannot read the weekly summary', true); end $$;
+select from pg_temp.as_user('Head of Education');
+insert into t select '25c weekly summary has this and last week',
+  (select jsonb_array_length(s->'reports') = 2 and (s->'comments'->>0)::int >= 1 and s ? 'answered' and s ? 'new_reps'
+   from (select public.weekly_summary() s) x);
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

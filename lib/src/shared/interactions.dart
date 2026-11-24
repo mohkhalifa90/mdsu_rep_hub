@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
+import 'avatars.dart';
 import 'format.dart';
 import 'widgets.dart';
 
@@ -44,6 +45,7 @@ Future<void> pickTags(BuildContext context,
                       dense: true,
                       value: chosen.contains(e.key),
                       onChanged: (v) => setD(() => v == true ? chosen.add(e.key) : chosen.remove(e.key)),
+                      secondary: UserAvatar(id: e.key, name: e.value, radius: 14),
                       title: Text(e.value),
                     ),
                 ]),
@@ -191,7 +193,10 @@ class ReactionBar extends StatelessWidget {
           return Tooltip(
             // who reacted, e.g. "Dania Khamis, Salma"
             message: e.value.map((u) => u == meId ? 'You' : (names[u] ?? '')).join(', '),
-            child: InkWell(
+            child: Pop(
+              key: ValueKey(e.key),
+              trigger: '${e.value.length}$mine',
+              child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () => _go(context, e.key, !mine),
               child: Container(
@@ -206,6 +211,7 @@ class ReactionBar extends StatelessWidget {
                     style: TextStyle(fontWeight: mine ? FontWeight.w700 : FontWeight.normal)),
               ),
             ),
+            ),
           );
         }),
       PopupMenuButton<String>(
@@ -219,6 +225,44 @@ class ReactionBar extends StatelessWidget {
       ),
     ]);
   }
+}
+
+/// A small "pop" (grow and settle) when [trigger] changes – used for reactions.
+class Pop extends StatefulWidget {
+  final Object trigger;
+  final Widget child;
+  const Pop({super.key, required this.trigger, required this.child});
+  @override
+  State<Pop> createState() => _PopState();
+}
+
+class _PopState extends State<Pop> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 380));
+  late final _scale = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.3).chain(CurveTween(curve: Curves.easeOut)), weight: 40),
+    TweenSequenceItem(tween: Tween<double>(begin: 1.3, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)), weight: 60),
+  ]).animate(_c);
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward(from: 0.3); // a new reaction appears with a small pop
+  }
+
+  @override
+  void didUpdateWidget(Pop old) {
+    super.didUpdateWidget(old);
+    if (old.trigger != widget.trigger) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ScaleTransition(scale: _scale, child: widget.child);
 }
 
 /// Edit text in a dialog. Returns the new text, or null when cancelled.
@@ -338,6 +382,8 @@ class _ItemInteractionsState extends State<ItemInteractions> {
       decoration: BoxDecoration(color: t.colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(10)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
+          UserAvatar(id: c.authorId, name: widget.names[c.authorId] ?? '?', radius: 12),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
                 '${widget.names[c.authorId] ?? 'Someone'} · ${fmtDateTime(c.createdAt)}'
