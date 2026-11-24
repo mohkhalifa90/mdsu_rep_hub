@@ -404,7 +404,7 @@ class DirectoryPage extends StatelessWidget {
                   ListTile(
                     leading: UserAvatar(id: r['id'] as String?, name: (r['full_name'] ?? '') as String),
                     title: Text((r['full_name'] ?? '') as String),
-                    subtitle: Text('${r['program'] ?? ''} · ${r['academy'] ?? ''} · year ${r['study_year'] ?? '-'}\n'
+                    subtitle: Text('${r['program'] ?? ''} · ${r['department'] ?? r['academy'] ?? ''} · year ${r['study_year'] ?? '-'}\n'
                         '${r['email'] ?? ''}'),
                     isThreeLine: true,
                   ),

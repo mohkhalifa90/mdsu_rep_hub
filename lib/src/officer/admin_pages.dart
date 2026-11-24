@@ -150,7 +150,11 @@ class _RepsPageState extends State<RepsPage> {
   Future<void> _edit(Profile p) async {
     final d = widget.data;
     final name = TextEditingController(text: p.fullName), program = TextEditingController(text: p.program ?? '');
-    String? academy = p.academy;
+    String? department = p.department;
+    // the "Department (Institutional)" councils, A–Z
+    final departments = d.councils.where((c) => c.type == 'general').map((c) => c.name).toSet().toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    if (department != null && !departments.contains(department)) departments.insert(0, department);
     int year = p.studyYear ?? 1;
     bool member = p.isMember, quiz = p.quizPassed, active = p.active;
     String role = p.role;
@@ -237,22 +241,22 @@ class _RepsPageState extends State<RepsPage> {
                 const SizedBox(height: 10),
                 TextField(controller: program, decoration: const InputDecoration(labelText: 'Program')),
                 const SizedBox(height: 10),
+                DropdownMenu<String>(
+                  initialSelection: department ?? '',
+                  expandedInsets: EdgeInsets.zero,
+                  label: const Text('Department (type to search)'),
+                  enableFilter: true,
+                  enableSearch: true,
+                  requestFocusOnTap: true,
+                  menuHeight: 320,
+                  dropdownMenuEntries: [
+                    const DropdownMenuEntry<String>(value: '', label: '—'),
+                    for (final n in departments) DropdownMenuEntry<String>(value: n, label: n),
+                  ],
+                  onSelected: (v) => setD(() => department = (v == null || v.isEmpty) ? null : v),
+                ),
+                const SizedBox(height: 10),
                 Row(children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String?>(
-                      value: academy,
-                      decoration: const InputDecoration(labelText: 'Academy'),
-                      items: const [
-                        DropdownMenuItem<String?>(value: null, child: Text('—')),
-                        DropdownMenuItem<String?>(value: 'EST', child: Text('EST')),
-                        DropdownMenuItem<String?>(value: 'HVV', child: Text('HVV')),
-                        DropdownMenuItem<String?>(value: 'IDT', child: Text('IDT')),
-                        DropdownMenuItem<String?>(value: 'UKK', child: Text('UKK')),
-                      ],
-                      onChanged: (v) => setD(() => academy = v),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: autoYear != null
                         // worked out from the cohort – moves up by itself every August (HT) / January (VT)
@@ -341,7 +345,7 @@ class _RepsPageState extends State<RepsPage> {
       await Repo.updateProfile(p.id, {
         'full_name': name.text.trim(),
         'program': program.text.trim().isEmpty ? null : program.text.trim(),
-        'academy': academy,
+        'department': department,
         if (autoYear == null) 'study_year': year,
         'is_member': member,
         'quiz_passed': quiz,
@@ -409,7 +413,7 @@ class _RepsPageState extends State<RepsPage> {
                 child: SelectableText(message),
               ),
               const SizedBox(height: 8),
-              const Text('Next: open them in the list and set program, academy, councils and membership.'),
+              const Text('Next: open them in the list and set program, department, councils and membership.'),
             ]),
           ),
           actions: [
@@ -527,7 +531,7 @@ class _RepsPageState extends State<RepsPage> {
               child: PageIntro(
                 text: 'Adding a representative: either the student creates an account with their student email '
                     '(they appear here greyed out – open them and switch on Active), or you press Create account '
-                    'and send them the temporary password. Then set program, academy, councils and membership.',
+                    'and send them the temporary password. Then set program, department, councils and membership.',
                 actions: [
                   FilledButton.icon(
                       onPressed: _createAccount,
@@ -611,7 +615,7 @@ class _RepsPageState extends State<RepsPage> {
                           ],
                         ])),
                         DataCell(Text(p.email ?? '')),
-                        DataCell(Text('${p.program ?? ''} ${p.academy == null ? '' : '· ${p.academy}'}')),
+                        DataCell(Text('${p.program ?? ''} ${p.department == null ? '' : '· ${p.department}'}')),
                         DataCell(Text('${p.studyYear ?? '-'}')),
                         DataCell(Text(p.role)),
                         DataCell(Icon(p.isMember ? Icons.check : Icons.close, color: p.isMember ? Colors.green : Colors.red)),

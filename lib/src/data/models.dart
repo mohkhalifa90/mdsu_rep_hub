@@ -7,6 +7,7 @@ int _int(dynamic v) => v == null ? 0 : (v as num).toInt();
 class Profile {
   final String id;
   final String fullName;
+  final String? department; // institution – one of the "Department (Institutional)" councils
   final String? email;
   final String role;
   final String? program;
@@ -28,6 +29,7 @@ class Profile {
         role = (m['role'] ?? 'rep') as String,
         program = m['program'] as String?,
         academy = m['academy'] as String?,
+        department = m['department'] as String?,
         studyYear = m['study_year'] == null ? null : _int(m['study_year']),
         isMember = (m['is_member'] ?? false) as bool,
         quizPassed = (m['quiz_passed'] ?? false) as bool,

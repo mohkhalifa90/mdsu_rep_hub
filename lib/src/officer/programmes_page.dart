@@ -149,7 +149,7 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
         return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           PageIntro(
             text: 'Every programme has one seat per running cohort (intake every term: one per term; once a year: '
-                'one per year). Central councils have a set number of seats. More representatives than seats is '
+                'one per year). Departments (institutional councils) have a set number of seats. More representatives than seats is '
                 'allowed – they are marked as extra.',
             actions: [
               OutlinedButton.icon(onPressed: _import, icon: const Icon(Icons.upload_file), label: const Text('Import Excel')),
@@ -227,7 +227,7 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
               showSelectedIcon: false,
               segments: const [
                 ButtonSegment(value: 'programmes', label: Text('Programmes')),
-                ButtonSegment(value: 'central', label: Text('Central councils')),
+                ButtonSegment(value: 'central', label: Text('Department (Institutional)')),
                 ButtonSegment(value: 'other', label: Text('Other')),
               ],
               selected: {_group},
@@ -732,7 +732,7 @@ Future<String?> showCouncilDialog(BuildContext context, {Council? council, Strin
                   decoration: const InputDecoration(labelText: 'Type'),
                   items: const [
                     DropdownMenuItem(value: 'program', child: Text('Programme')),
-                    DropdownMenuItem(value: 'general', child: Text('Central council')),
+                    DropdownMenuItem(value: 'general', child: Text('Department (Institutional)')),
                     DropdownMenuItem(value: 'academy', child: Text('Academy council')),
                     DropdownMenuItem(value: 'siec', child: Text('SIEC')),
                   ],

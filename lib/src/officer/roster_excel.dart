@@ -17,7 +17,7 @@ const _cols = [
   'Council', 'Type', 'City', 'Teaching', 'New students', 'Length (years)', 'Seats', 'Director',
   'Director email', 'Institution', 'Cancelled', 'Cohort', 'Rep email', 'Rep name', 'Note',
 ];
-const _typeOut = {'program': 'Programme', 'general': 'Central council', 'academy': 'Academy council', 'siec': 'SIEC'};
+const _typeOut = {'program': 'Programme', 'general': 'Department (Institutional)', 'academy': 'Academy council', 'siec': 'SIEC'};
 
 String _numText(double? v) => v == null ? '' : (v == v.roundToDouble() ? '${v.toInt()}' : '$v');
 
@@ -143,6 +143,9 @@ class _Plan {
   final newReps = <_FileRep>[];
   final repChanges = <_Change<(RosterEntry, _FileRep)>>[];
   final missing = <_Change<RosterEntry>>[];
+  final missingCouncils = <_Change<Council>>[]; // in the app but deleted from the file
+  bool looksPartial = false; // the file has only part of the list – nothing ticked to delete
+  final councilNames = <String, String>{};
   final problems = <String>[];
   int unchanged = 0;
 }
@@ -150,7 +153,7 @@ class _Plan {
 Map<String, dynamic> _parseCouncil(Map<String, String> r, List<String> problems, int row) {
   String? t(String k) => (r[k] ?? '').isEmpty ? null : r[k];
   final type = switch ((r['type'] ?? '').toLowerCase()) {
-    'central council' || 'central' || 'centralt råd' => 'general',
+    'central council' || 'central' || 'centralt råd' || 'department (institutional)' || 'department' || 'institutional' => 'general',
     'academy council' || 'academy' => 'academy',
     'siec' => 'siec',
     _ => 'program',
@@ -237,7 +240,8 @@ Future<bool> importRosterXlsx(BuildContext context) async {
     }
     final councils = await Repo.councils();
     final roster = await Repo.roster();
-    plan = _buildPlan(sheet, headerRow, idx, councils, roster);
+    final meetings = await Repo.meetings();
+    plan = _buildPlan(sheet, headerRow, idx, councils, roster, meetings);
   } catch (e) {
     if (context.mounted) showSnack(context, errorText(e));
     return false;
@@ -249,8 +253,10 @@ Future<bool> importRosterXlsx(BuildContext context) async {
   return runAction(context, () => _apply(plan), success: 'Imported ✓');
 }
 
-_Plan _buildPlan(Sheet sheet, int headerRow, Map<String, int> idx, List<Council> councils, List<RosterEntry> roster) {
+_Plan _buildPlan(Sheet sheet, int headerRow, Map<String, int> idx, List<Council> councils, List<RosterEntry> roster,
+    List<Meeting> meetings) {
   final plan = _Plan();
+  plan.councilNames.addAll({for (final c in councils) c.id: c.name});
   final byNorm = {for (final c in councils) normName(c.name): c};
   final fileCouncils = <String, _FileCouncil>{};
   final fileReps = <String, _FileRep>{}; // council|email
@@ -344,9 +350,29 @@ _Plan _buildPlan(Sheet sheet, int headerRow, Map<String, int> idx, List<Council>
     for (final f in fileCouncils.values)
       if ((f.existing ?? f.similar) != null) (f.existing ?? f.similar)!.id
   };
+  // programmes / councils deleted from the file (the download lists every council except SIEC)
+  final gone = councils.where((c) => !c.isSiec && !inFile.contains(c.id)).toList()
+    ..sort((a, b) => a.name.compareTo(b.name));
+  final listed = councils.where((c) => !c.isSiec).length;
+  // many councils missing = probably a shortened file, not deletions
+  plan.looksPartial = gone.length > 3 && gone.length > listed * 0.3;
+  for (final c in gone) {
+    final reps = roster.where((r) => r.councilId == c.id).length;
+    final mts = meetings.where((m) => m.councilId == c.id).length;
+    plan.missingCouncils.add(_Change(
+      c,
+      [
+        '$reps rep${reps == 1 ? '' : 's'} on its list',
+        if (mts > 0) '$mts meeting${mts == 1 ? '' : 's'} – deleted too',
+      ].join(' · '),
+      // ticked when it looks like a real deletion and nothing would be lost
+      apply: !plan.looksPartial && mts == 0,
+    ));
+  }
+  // rows deleted from a council that is still in the file: remove them
   for (final r in roster) {
     if (inFile.contains(r.councilId) && !seen.contains(r.id)) {
-      plan.missing.add(_Change(r, 'not in the file', apply: false));
+      plan.missing.add(_Change(r, 'not in the file', apply: true));
     }
   }
   return plan;
@@ -419,6 +445,9 @@ Future<void> _apply(_Plan plan) async {
   for (final ch in plan.missing) {
     if (ch.apply) await Repo.removeFromRoster(ch.item.id);
   }
+  for (final ch in plan.missingCouncils) {
+    if (ch.apply) await Repo.deleteCouncil(ch.item.id); // its list of reps goes with it
+  }
 }
 
 class _PreviewPage extends StatefulWidget {
@@ -448,7 +477,9 @@ class _PreviewPageState extends State<_PreviewPage> {
         p.councilChanges.where((c) => c.apply).length +
         p.newReps.where((r) => r.apply).length +
         p.repChanges.where((c) => c.apply).length +
-        p.missing.where((c) => c.apply).length;
+        p.missing.where((c) => c.apply).length +
+        p.missingCouncils.where((c) => c.apply).length;
+    final toDelete = p.missing.length + p.missingCouncils.length;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Check before importing'),
@@ -465,6 +496,22 @@ class _PreviewPageState extends State<_PreviewPage> {
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Text('Nothing is saved until you press Apply. Untick what you do not want. '
             '${p.unchanged} representatives are already the same and are left as they are.'),
+        if (ticked == 0 && toDelete == 0 && p.problems.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 24),
+            child: EmptyState('The file and the app are the same – nothing to import.', icon: Icons.check_circle_outline),
+          ),
+        if (p.looksPartial)
+          Card(
+            color: Colors.orange.withValues(alpha: 0.12),
+            margin: const EdgeInsets.only(top: 12),
+            child: ListTile(
+              leading: Icon(Icons.warning_amber, color: Colors.orange.shade900),
+              title: Text('${p.missingCouncils.length} programmes / councils are not in this file'),
+              subtitle: const Text('It looks like the file has only part of the list, so nothing is ticked to delete. '
+                  'Tick only what you really deleted.'),
+            ),
+          ),
         const SizedBox(height: 12),
         _section('🟢 New programmes / councils (${p.newCouncils.length})', Colors.green.shade700, Icons.add_circle_outline, [
           for (final f in p.newCouncils)
@@ -511,14 +558,24 @@ class _PreviewPageState extends State<_PreviewPage> {
               subtitle: Text('${c.item.$2.council.name} · ${c.what}'),
             ),
         ]),
-        _section('🔴 In the app but not in the file (${p.missing.length}) – tick to remove', Colors.red.shade700,
-            Icons.person_remove_outlined, [
+        _section('🔴 Programmes / councils deleted from the file (${p.missingCouncils.length}) – ticked ones are deleted',
+            Colors.red.shade700, Icons.delete_outline, [
+          for (final c in p.missingCouncils)
+            CheckboxListTile(
+              value: c.apply,
+              onChanged: (v) => setState(() => c.apply = v ?? false),
+              title: Text(c.item.name),
+              subtitle: Text(c.what),
+            ),
+        ]),
+        _section('🔴 Representatives deleted from the file (${p.missing.length}) – ticked ones are removed',
+            Colors.red.shade700, Icons.person_remove_outlined, [
           for (final c in p.missing)
             CheckboxListTile(
               value: c.apply,
               onChanged: (v) => setState(() => c.apply = v ?? false),
               title: Text(c.item.email),
-              subtitle: const Text('Kept unless you tick it'),
+              subtitle: Text('${p.councilNames[c.item.councilId] ?? ''} · removed from this list (the account stays)'),
             ),
         ]),
         _section('⚠️ Rows with a problem (${p.problems.length})', Colors.red.shade700, Icons.warning_amber, [
