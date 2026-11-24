@@ -6,6 +6,7 @@ import '../push/app_badge_stub.dart' if (dart.library.js_interop) '../push/app_b
 import '../push/push_service.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
+import 'badges.dart';
 import 'format.dart';
 import 'interactions.dart';
 import 'theme.dart';
@@ -274,8 +275,15 @@ class _ChatViewState extends State<ChatView> {
   final _expanded = <String>{}; // posts with all comments shown
   final _writing = <String>{}; // posts with the comment box open
   bool _focusApplied = false;
-  late final Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id);
-  late final Stream<List<Reaction>> _reactions = Repo.reactionStream();
+  int _limit = 80; // newest messages loaded; "Load older" raises it
+  late Stream<List<Message>> _stream = Repo.messageStream(widget.channel.id, limit: _limit);
+  late final Stream<List<Reaction>> _reactions = Repo.reactionStream(widget.channel.id);
+  final _hidden = <String>{}; // deleted, waiting for Undo to run out
+
+  void _loadOlder() => setState(() {
+        _limit += 80;
+        _stream = Repo.messageStream(widget.channel.id, limit: _limit);
+      });
 
   bool get _feed => widget.channel.officerOnly;
   bool get _canPost => !widget.channel.officerOnly || widget.me.isOfficer;
@@ -295,7 +303,7 @@ class _ChatViewState extends State<ChatView> {
   void _markSeen(int count) {
     if (_officer || count == _seenCount) return;
     _seenCount = count;
-    Repo.markChannelRead(widget.channel.id).catchError((_) {});
+    Repo.markChannelRead(widget.channel.id).then((_) => Badges.instance.refresh()).catchError((_) {});
   }
 
   List<String> _tagsIn(String text, Set<String> tags) => tagsIn(text, tags, widget.names);
@@ -367,6 +375,11 @@ class _ChatViewState extends State<ChatView> {
 
   Future<void> _delete(Message m) async {
     final post = m.parentId == null;
+    if (!post) {
+      deleteWithUndo(context, 'Comment deleted', () => Repo.deleteMessage(m.id),
+          hide: () => setState(() => _hidden.add(m.id)), restore: () => setState(() => _hidden.remove(m.id)));
+      return;
+    }
     if (await confirm(context, post ? 'Delete this post?' : 'Delete this comment?',
             post ? 'The post and all comments under it are deleted for everyone.' : 'The comment is deleted for everyone.',
             ok: 'Delete') &&
@@ -536,7 +549,7 @@ class _ChatViewState extends State<ChatView> {
     ]);
   }
 
-  Widget _posts(List<Message> all, List<Reaction> reactions) {
+  Widget _posts(List<Message> all, List<Reaction> reactions, {bool more = false}) {
     final t = Theme.of(context);
     final posts = all.where((m) => m.parentId == null).toList().reversed.toList(); // newest first
     final comments = <String, List<Message>>{};
@@ -556,12 +569,22 @@ class _ChatViewState extends State<ChatView> {
     }
     final accent = channelColor(widget.channel);
     if (posts.isEmpty) {
-      return EmptyState(_officer ? 'No posts yet – write the first one below' : 'No posts yet');
+      return EmptyState(
+          _officer
+              ? 'No posts yet. Write the first one in the box below – everyone in this channel gets a notification.'
+              : 'No posts yet. When the Head of Education posts here, you get a notification.',
+          icon: Icons.forum_outlined);
     }
     return ListView.builder(
       padding: const EdgeInsets.all(12),
-      itemCount: posts.length,
+      itemCount: posts.length + (more ? 1 : 0),
       itemBuilder: (context, i) {
+        if (i == posts.length) {
+          return Center(
+            child: TextButton.icon(
+                onPressed: _loadOlder, icon: const Icon(Icons.history), label: const Text('Load older posts')),
+          );
+        }
         final p = posts[i];
         final list = comments[p.id] ?? const <Message>[];
         final open = _expanded.contains(p.id);
@@ -636,15 +659,16 @@ class _ChatViewState extends State<ChatView> {
           stream: _stream,
           builder: (context, snap) {
             if (snap.hasError) return ErrorView(error: snap.error!);
-            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-            final msgs = snap.data!;
+            if (!snap.hasData) return const SkeletonList();
+            final msgs = snap.data!.where((m) => !_hidden.contains(m.id)).toList();
+            final more = snap.data!.length >= _limit; // there may be older ones
             _markSeen(msgs.length);
             return StreamBuilder<List<Reaction>>(
               stream: _reactions,
               builder: (context, r) {
                 final reactions = r.data ?? const <Reaction>[];
                 return _feed
-                    ? _posts(msgs, reactions)
+                    ? _posts(msgs, reactions, more: more)
                     : _chat(msgs.where((m) => m.parentId == null).toList(), reactions);
               },
             );

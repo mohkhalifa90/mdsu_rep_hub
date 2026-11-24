@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../push/push_service.dart';
 import '../rep/more_page.dart' show TutoringBoard;
 import '../shared/posts.dart';
+import '../shared/badges.dart';
 import '../shared/channels_page.dart';
 import '../shared/theme.dart';
+import '../shared/tour.dart';
 import '../shared/widgets.dart';
 import 'admin_pages.dart';
+import 'quick_search.dart';
 import 'agenda_builder_page.dart';
 import 'reports_page.dart';
 import 'programmes_page.dart';
@@ -55,7 +59,28 @@ class _OfficerShellState extends State<OfficerShell> {
     PushService.instance.onOpenLink = (link) {
       if (mounted) _openLink(link);
     };
+    Badges.instance.start();
+    if (widget.me.uiPrefs['onboarded'] != true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showTour(context, officerTour);
+      });
+    }
   }
+
+  @override
+  void dispose() {
+    Badges.instance.stop();
+    super.dispose();
+  }
+
+  /// Tab icon with the number of things waiting there
+  Widget _icon(String key, IconData icon) => badgeIcon(
+      icon,
+      switch (key) {
+        'reports' => Badges.instance.of('reports'),
+        'reps' => Badges.instance.of('signups'),
+        _ => 0,
+      });
 
   void _reload() => setState(() {
         _f = OfficerData.load(widget.me);
@@ -78,6 +103,7 @@ class _OfficerShellState extends State<OfficerShell> {
   int get _index => _dest.indexWhere((d) => d.$1 == _tab);
 
   void _goTo(String page) => setState(() {
+        Badges.instance.refresh();
         if (page != _tab) {
           _linkArg = null;
           _linkArg2 = null;
@@ -109,8 +135,9 @@ class _OfficerShellState extends State<OfficerShell> {
         'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils, focusId: _linkArg),
         'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d, openMeetingId: _linkArg),
         'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
-        'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d),
-        'programmes' => ProgrammesPage(key: ValueKey('pr$_refresh'), data: d, onChanged: _reload),
+        'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d, initialSearch: _linkArg),
+        'programmes' =>
+          ProgrammesPage(key: ValueKey('pr$_refresh'), data: d, onChanged: _reload, openCouncilId: _linkArg),
         'tutoring' => TutoringBoard(key: ValueKey('tu$_refresh'), me: d.me, focusId: _linkArg),
         'settings' => SettingsPage(key: ValueKey('se$_refresh'), data: d, onChanged: _reload),
         _ => TodayPage(key: ValueKey('to$_refresh'), data: d, goTo: _openLink),
@@ -125,17 +152,29 @@ class _OfficerShellState extends State<OfficerShell> {
         final width = MediaQuery.of(context).size.width;
         final phone = width < 720;
         final extended = width > 1100;
-        final rail = NavigationRail(
+        Widget rail() => NavigationRail(
           scrollable: true,
           extended: extended,
           selectedIndex: _index,
           labelType: extended ? NavigationRailLabelType.none : NavigationRailLabelType.all,
           onDestinationSelected: (i) => _goTo(_dest[i].$1),
           destinations: [
-            for (final (_, icon, label) in _dest) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
+            for (final (key, icon, label) in _dest) NavigationRailDestination(icon: _icon(key, icon), label: Text(label)),
           ],
         );
-        return Scaffold(
+        // Ctrl+K (Cmd+K on Mac): quick search
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyK, control: true): () =>
+                showQuickSearch(context, councils: d.councils, open: _openLink),
+            const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () =>
+                showQuickSearch(context, councils: d.councils, open: _openLink),
+          },
+          child: Focus(
+            autofocus: true,
+            child: ListenableBuilder(
+          listenable: Badges.instance,
+          builder: (context, _) => Scaffold(
           key: _scaffold,
           appBar: AppBar(
             leading: phone
@@ -144,6 +183,10 @@ class _OfficerShellState extends State<OfficerShell> {
                 : Padding(padding: const EdgeInsets.all(10), child: Image.asset('assets/logo_symbol.png')),
             title: Text(phone ? _dest[_index].$3 : 'Rep Hub · ${_dest[_index].$3}'),
             actions: [
+              IconButton(
+                  tooltip: 'Search (Ctrl+K)',
+                  icon: const Icon(Icons.search),
+                  onPressed: () => showQuickSearch(context, councils: d.councils, open: _openLink)),
               if (d.semester != null && !phone)
                 Center(child: Padding(padding: const EdgeInsets.only(right: 12), child: Text(d.semester!.name))),
               NotificationBell(onOpen: _openLink),
@@ -192,18 +235,21 @@ class _OfficerShellState extends State<OfficerShell> {
                         ),
                       ]),
                     ),
-                    for (final (_, icon, label) in _dest)
-                      NavigationDrawerDestination(icon: Icon(icon), label: Text(label)),
+                    for (final (key, icon, label) in _dest)
+                      NavigationDrawerDestination(icon: _icon(key, icon), label: Text(label)),
                   ],
                 )
               : null,
           body: phone
               ? _page(d)
               : Row(children: [
-                  rail,
+                  rail(),
                   const VerticalDivider(width: 1),
                   Expanded(child: _page(d)),
                 ]),
+          ),
+            ),
+          ),
         );
       },
     );

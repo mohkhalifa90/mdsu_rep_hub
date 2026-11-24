@@ -5,9 +5,11 @@ import '../data/repo.dart';
 import '../push/push_service.dart';
 import '../push/web_push_card.dart';
 import '../shared/posts.dart';
+import '../shared/badges.dart';
 import '../shared/channels_page.dart';
 import '../shared/format.dart';
 import '../shared/theme.dart';
+import '../shared/tour.dart';
 import '../shared/widgets.dart';
 import 'hours_page.dart';
 import 'more_page.dart';
@@ -54,6 +56,19 @@ class _RepShellState extends State<RepShell> {
     PushService.instance.onOpenLink = (link) {
       if (_data != null && mounted) _openLink(link, _data!);
     };
+    Badges.instance.start();
+    // first time here: a short welcome tour
+    if (widget.me.uiPrefs['onboarded'] != true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showTour(context, repTour);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    Badges.instance.stop();
+    super.dispose();
   }
 
   void _reload() => setState(() {
@@ -134,20 +149,28 @@ class _RepShellState extends State<RepShell> {
             actions: [NotificationBell(onOpen: (l) => _openLink(l, d))],
           ),
           body: SafeArea(child: pages[_tab]),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _tab,
-            onDestinationSelected: (i) => setState(() {
-              _tab = i;
-              if (i != 2) _openMeeting = null;
-              if (i != 3) _openChannel = _focusMessage = null;
-            }),
-            destinations: const [
-              NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
-              NavigationDestination(icon: Icon(Icons.schedule), label: 'Hours'),
-              NavigationDestination(icon: Icon(Icons.event_note_outlined), label: 'Meetings'),
-              NavigationDestination(icon: Icon(Icons.forum_outlined), label: 'Channels'),
-              NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
-            ],
+          bottomNavigationBar: ListenableBuilder(
+            listenable: Badges.instance,
+            builder: (context, _) => NavigationBar(
+              selectedIndex: _tab,
+              onDestinationSelected: (i) {
+                setState(() {
+                  _tab = i;
+                  if (i != 2) _openMeeting = null;
+                  if (i != 3) _openChannel = _focusMessage = null;
+                });
+                Badges.instance.refresh();
+              },
+              destinations: [
+                const NavigationDestination(icon: Icon(Icons.home_outlined), label: 'Home'),
+                const NavigationDestination(icon: Icon(Icons.schedule), label: 'Hours'),
+                NavigationDestination(
+                    icon: badgeIcon(Icons.event_note_outlined, Badges.instance.of('meetings')), label: 'Meetings'),
+                NavigationDestination(
+                    icon: badgeIcon(Icons.forum_outlined, Badges.instance.of('channels')), label: 'Channels'),
+                const NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
+              ],
+            ),
           ),
         );
       },

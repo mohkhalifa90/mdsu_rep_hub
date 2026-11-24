@@ -39,7 +39,8 @@ String _num(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStr
 class ProgrammesPage extends StatefulWidget {
   final OfficerData data;
   final VoidCallback onChanged;
-  const ProgrammesPage({super.key, required this.data, required this.onChanged});
+  final String? openCouncilId; // from the quick search
+  const ProgrammesPage({super.key, required this.data, required this.onChanged, this.openCouncilId});
   @override
   State<ProgrammesPage> createState() => _ProgrammesPageState();
 }
@@ -55,6 +56,22 @@ class _ProgrammesPageState extends State<ProgrammesPage> {
   final _search = TextEditingController();
 
   void _reload() => setState(() => _f = _loadRoster());
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.openCouncilId;
+    if (id != null) {
+      final hit = widget.data.councils.where((c) => c.id == id).toList();
+      if (hit.isNotEmpty) {
+        final c = hit.first;
+        _group = c.isProgramme ? 'programmes' : (c.type == 'general' ? 'central' : 'other');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _open(c);
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -347,13 +364,12 @@ class _ProgrammeDetailPageState extends State<ProgrammeDetailPage> {
     if (saved) _reload();
   }
 
-  Future<void> _remove(RosterEntry r, String who) async {
-    if (await confirm(context, 'Remove $who?', 'They leave this council (their account is not deleted).', ok: 'Remove') &&
-        mounted &&
-        await runAction(context, () => Repo.removeFromRoster(r.id), success: 'Removed')) {
-      _reload();
-    }
-  }
+  final _hidden = <String>{}; // removed, waiting for Undo to run out
+
+  void _remove(RosterEntry r, String who) => deleteWithUndo(context, '$who removed from this council', () async {
+        await Repo.removeFromRoster(r.id);
+        if (mounted) _reload();
+      }, hide: () => setState(() => _hidden.add(r.id)), restore: () => setState(() => _hidden.remove(r.id)));
 
   @override
   Widget build(BuildContext context) {
@@ -366,7 +382,7 @@ class _ProgrammeDetailPageState extends State<ProgrammeDetailPage> {
         final hits = d.councils.where((c) => c.id == widget.councilId).toList();
         if (hits.isEmpty) return const EmptyState('This council was deleted');
         final c = hits.first;
-        final p = SeatPlan(c, d.roster);
+        final p = SeatPlan(c, d.roster.where((r) => !_hidden.contains(r.id)).toList());
         final now = DateTime.now();
         final t = Theme.of(context);
         final emails = p.all.map((r) => r.email).toList();

@@ -492,12 +492,14 @@ class Repo {
 
   static Future<String> channelFileUrl(String path) => sb.storage.from(channelFilesBucket).createSignedUrl(path, 300);
 
-  static Stream<List<Message>> messageStream(String channelId) => sb
+  /// The newest [limit] messages (posts and comments) of a channel, oldest first (live)
+  static Stream<List<Message>> messageStream(String channelId, {int limit = 80}) => sb
       .from('messages')
       .stream(primaryKey: ['id'])
       .eq('channel_id', channelId)
-      .order('created_at', ascending: true)
-      .map((rows) => rows.map(Message.fromMap).toList());
+      .order('created_at', ascending: false)
+      .limit(limit)
+      .map((rows) => rows.map(Message.fromMap).toList().reversed.toList());
 
   static Future<void> sendMessage(String channelId, String body,
           {bool announcement = false, String? filePath, String? fileName, String? parentId, List<String>? mentions}) =>
@@ -516,10 +518,21 @@ class Repo {
 
   static Future<void> deleteMessage(String id) => sb.from('messages').delete().eq('id', id);
 
-  /// All reactions I can see (live)
-  static Stream<List<Reaction>> reactionStream() => sb
+  /// Numbers for the tabs (reps: channels, meetings; officer: reports, signups)
+  static Future<Map<String, int>> badges() async {
+    try {
+      final r = await sb.rpc('my_badges');
+      return {for (final e in (r as Map).entries) '${e.key}': (e.value as num).toInt()};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Reactions in one channel (live)
+  static Stream<List<Reaction>> reactionStream(String channelId) => sb
       .from('message_reactions')
       .stream(primaryKey: ['message_id', 'user_id']) // same key as the table, so removed reactions disappear live
+      .eq('channel_id', channelId)
       .map((rows) => rows.map(Reaction.fromMap).toList());
 
   /// One reaction per person: a new emoji replaces the old one; off removes it.
@@ -573,9 +586,11 @@ class Repo {
       .order('created_at', ascending: true)
       .map((rows) => rows.map(ItemComment.fromMap).toList());
 
-  static Stream<List<ItemReaction>> itemReactions() => sb
+  /// Reactions on posts or on the tutoring board (area: post | tutoring), live
+  static Stream<List<ItemReaction>> itemReactions(String area) => sb
       .from('item_reactions')
       .stream(primaryKey: ['kind', 'item_id', 'user_id']) // same key as the table
+      .eq('area', area)
       .map((rows) => rows.map(ItemReaction.fromMap).toList());
 
   static Future<void> addItemComment(String kind, String itemId, String body, {List<String> mentions = const []}) =>

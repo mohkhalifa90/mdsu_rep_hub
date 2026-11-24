@@ -8,6 +8,7 @@ import '../data/roster.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/theme.dart';
+import '../shared/tour.dart';
 import '../shared/widgets.dart';
 import 'officer_shell.dart';
 
@@ -114,7 +115,8 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
 // ============================ Representatives ==============================
 class RepsPage extends StatefulWidget {
   final OfficerData data;
-  const RepsPage({super.key, required this.data});
+  final String? initialSearch; // from the quick search
+  const RepsPage({super.key, required this.data, this.initialSearch});
   @override
   State<RepsPage> createState() => _RepsPageState();
 }
@@ -122,7 +124,7 @@ class RepsPage extends StatefulWidget {
 class _RepsPageState extends State<RepsPage> {
   late Future<List<Profile>> _f = Repo.profiles();
   void _reload() => setState(() => _f = Repo.profiles());
-  final _search = TextEditingController();
+  late final _search = TextEditingController(text: widget.initialSearch ?? '');
   String _filter = 'all'; // all | active | waiting | inactive
 
   @override
@@ -777,6 +779,14 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: const Text('Your own choice – every representative can choose theirs under More → Appearance.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showAppearanceSheet(context),
+        ),
+      ),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.tips_and_updates_outlined),
+          title: const Text('Show the welcome tour again'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => showTour(context, officerTour, markSeen: false),
         ),
       ),
       const SectionTitle('Payslips'),

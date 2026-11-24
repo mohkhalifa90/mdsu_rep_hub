@@ -545,6 +545,17 @@ do $$ begin
   insert into t values ('23c link must start with https://', false);
 exception when others then insert into t values ('23c link must start with https://', true); end $$;
 
+-- 24. Badges and scoped reactions
+set role authenticated;
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '24 rep badges have channels and meetings', (select public.my_badges() ? 'channels' and public.my_badges() ? 'meetings');
+insert into public.message_reactions (message_id, emoji) select id, '👍' from public.messages where body = 'Link test';
+insert into t select '24b reaction knows its channel',
+  (select r.channel_id = m.channel_id from public.message_reactions r join public.messages m on m.id = r.message_id
+   where m.body = 'Link test' and r.user_id = auth.uid());
+select from pg_temp.as_user('Head of Education');
+insert into t select '24c officer badges have reports and signups', (select public.my_badges() ? 'reports' and public.my_badges() ? 'signups');
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

@@ -7,6 +7,7 @@ import '../shared/format.dart';
 import '../shared/interactions.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/theme.dart';
+import '../shared/tour.dart';
 import '../shared/widgets.dart';
 import 'rep_shell.dart';
 
@@ -48,6 +49,11 @@ class MorePage extends StatelessWidget {
           leading: const Icon(Icons.person_outline),
           title: const Text('My profile & payment details'),
           onTap: () => _push(context, 'My profile', ProfilePage(data: data, onChanged: onChanged)),
+        ),
+        ListTile(
+          leading: const Icon(Icons.tips_and_updates_outlined),
+          title: const Text('Show the welcome tour'),
+          onTap: () => showTour(context, repTour, markSeen: false),
         ),
         ListTile(
           leading: const Icon(Icons.palette_outlined),
@@ -139,7 +145,7 @@ class _TutoringBoardState extends State<TutoringBoard> {
   Future<(List<TutoringPost>, Map<String, String>)> _load() async => (await Repo.tutoring(), await Repo.memberNames());
   void _reload() => setState(() => _f = _load());
   late final _comments = Repo.itemComments('tutoring');
-  late final _reactions = Repo.itemReactions();
+  late final _reactions = Repo.itemReactions('tutoring');
 
   /// New post, or edit [post]
   Future<void> _write(Map<String, String> names, {TutoringPost? post}) async {
@@ -289,7 +295,11 @@ class _TutoringBoardState extends State<TutoringBoard> {
                     child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
                       Text('MDSU only hosts this board and is not responsible for the tutoring itself.',
                           style: Theme.of(context).textTheme.bodySmall),
-                      if (posts.isEmpty) const EmptyState('No posts yet'),
+                      if (posts.isEmpty)
+                        EmptyState('Nothing here yet. Offer help in a course you are good at, or ask for help.',
+                            icon: Icons.volunteer_activism_outlined,
+                            actionLabel: 'New post',
+                            onAction: () => _write(names)),
                       for (final p in posts)
                         Center(
                           child: ConstrainedBox(
@@ -313,7 +323,9 @@ class DirectoryPage extends StatelessWidget {
   Widget build(BuildContext context) => Loader<List<Map<String, dynamic>>>(
         future: Repo.directory(),
         builder: (context, rows) => rows.isEmpty
-            ? const EmptyState('No one has shared contact details yet')
+            ? const EmptyState(
+                'No one has shared contact details yet. Share yours under My profile → "Share my contact details".',
+                icon: Icons.contacts_outlined)
             : ListView(children: [
                 for (final r in rows)
                   ListTile(

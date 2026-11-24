@@ -38,6 +38,7 @@ class AppTheme extends ChangeNotifier {
   String accent = 'blue';
   String banner = 'waves';
   String? bannerUrl; // own picture
+  bool onboarded = false; // has seen the welcome tour
 
   Color get seed => accents[accent]?.$2 ?? mdsuBlue;
 
@@ -47,6 +48,7 @@ class AppTheme extends ChangeNotifier {
     accent = accents.containsKey(p['accent']) ? p['accent'] as String : 'blue';
     banner = (p['banner'] as String?) ?? 'waves';
     bannerUrl = p['banner_url'] as String?;
+    onboarded = p['onboarded'] == true;
     if (banner == 'custom' && bannerUrl == null) banner = 'waves';
     notifyListeners();
   }
@@ -59,6 +61,7 @@ class AppTheme extends ChangeNotifier {
         'accent': accent,
         'banner': banner,
         if (bannerUrl != null) 'banner_url': bannerUrl,
+        if (onboarded) 'onboarded': true,
       };
 
   Future<void> save() async {

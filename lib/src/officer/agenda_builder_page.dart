@@ -174,7 +174,9 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
             ],
           ),
           const SectionTitle('Upcoming'),
-          if (upcoming.isEmpty) const EmptyState('No upcoming meetings'),
+          if (upcoming.isEmpty)
+            EmptyState('No upcoming meetings. Add one – its council gets a notification.',
+                icon: Icons.event_outlined, actionLabel: 'Add meeting', onAction: _addMeeting),
           for (final m in upcoming) _tile(m, names, items, att),
           SectionTitle('Earlier meetings (${past.length})'),
           if (past.isEmpty) const EmptyState('No earlier meetings'),
@@ -470,7 +472,7 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
               ),
             ),
           const SectionTitle('2 · Items from student representatives'),
-          if (items.isEmpty) const EmptyState('No items yet'),
+          if (items.isEmpty) const EmptyState('No topics from the reps yet. Use "Ask reps for input" to remind them.'),
           for (final a in items)
             Card(
               child: Padding(

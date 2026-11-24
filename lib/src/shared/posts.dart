@@ -104,7 +104,7 @@ class _PostsPageState extends State<PostsPage> {
   Future<(List<Post>, Map<String, String>)> _load() async => (await Repo.posts(), await Repo.memberNames());
   void _reload() => setState(() => _f = _load());
   late final _comments = Repo.itemComments('post');
-  late final _reactions = Repo.itemReactions();
+  late final _reactions = Repo.itemReactions('post');
 
   String _audience(Post p) {
     if (p.councilId == null) return 'All representatives';
@@ -189,7 +189,13 @@ class _PostsPageState extends State<PostsPage> {
                       ),
                     ),
                   if (widget.officer) const SizedBox(height: 8),
-                  if (posts.isEmpty) const EmptyState('No posts yet'),
+                  if (posts.isEmpty)
+                    EmptyState(
+                      widget.officer
+                          ? 'No posts yet. Posts reach all representatives or one council, with a notification.'
+                          : 'No posts from the Head of Education yet.',
+                      icon: Icons.campaign_outlined,
+                    ),
                   for (final p in posts)
                     Center(
                       child: ConstrainedBox(

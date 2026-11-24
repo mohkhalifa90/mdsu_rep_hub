@@ -302,6 +302,7 @@ class _ItemInteractionsState extends State<ItemInteractions> {
   final _tags = <String>{};
   late bool _open = widget.initiallyOpen;
   bool _writing = false;
+  final _hidden = <String>{}; // deleted, waiting for Undo to run out
 
   @override
   void dispose() {
@@ -350,12 +351,8 @@ class _ItemInteractionsState extends State<ItemInteractions> {
               final v = await editTextDialog(context, title: 'Edit comment', initial: c.body);
               if (v != null && mounted) await runAction(context, () => Repo.editItemComment(c.id, v));
             },
-            onDelete: () async {
-              if (await confirm(context, 'Delete this comment?', 'It is deleted for everyone.', ok: 'Delete') &&
-                  mounted) {
-                await runAction(context, () => Repo.deleteItemComment(c.id));
-              }
-            },
+            onDelete: () => deleteWithUndo(context, 'Comment deleted', () => Repo.deleteItemComment(c.id),
+                hide: () => setState(() => _hidden.add(c.id)), restore: () => setState(() => _hidden.remove(c.id))),
           ),
         ]),
         mentionText(context, c.body, c.mentions, widget.names),
@@ -371,7 +368,7 @@ class _ItemInteractionsState extends State<ItemInteractions> {
 
   @override
   Widget build(BuildContext context) {
-    final list = widget.comments;
+    final list = widget.comments.where((c) => !_hidden.contains(c.id)).toList();
     // folded: only the latest comment
     final shown = _open || list.length <= 1 ? list : [list.last];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

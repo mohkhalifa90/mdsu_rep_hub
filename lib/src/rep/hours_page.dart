@@ -114,7 +114,8 @@ class _HoursPageState extends State<HoursPage> {
                 child: Text('Your report is submitted and locked until it is returned or the next semester starts.',
                     textAlign: TextAlign.center),
               ),
-            if (entries.isEmpty) const EmptyState('No time logged yet. Tap “Log time” after each meeting.'),
+            if (entries.isEmpty)
+              const EmptyState('No time logged yet. Tap “Log time” after each meeting or task.', icon: Icons.timer_outlined),
             for (final e in entries)
               Card(
                 child: ListTile(

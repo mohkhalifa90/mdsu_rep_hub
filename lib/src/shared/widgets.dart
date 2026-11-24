@@ -69,22 +69,109 @@ class Loader<T> extends StatelessWidget {
         future: future,
         builder: (context, snap) {
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: onRetry);
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (snap.connectionState != ConnectionState.done) return const SkeletonList();
           return builder(context, snap.data as T);
         },
       );
 }
 
+/// Grey placeholder cards while a page loads – feels faster than a spinner
+class SkeletonList extends StatefulWidget {
+  final int count;
+  const SkeletonList({super.key, this.count = 5});
+  @override
+  State<SkeletonList> createState() => _SkeletonListState();
+}
+
+class _SkeletonListState extends State<SkeletonList> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
+    Widget bar(double w, double h) => Container(
+        width: w, height: h, decoration: BoxDecoration(color: base, borderRadius: BorderRadius.circular(6)));
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1).animate(_c),
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          for (var i = 0; i < widget.count; i++)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  bar(140, 12),
+                  const SizedBox(height: 10),
+                  bar(double.infinity, 12),
+                  const SizedBox(height: 6),
+                  bar(i.isEven ? 220 : 160, 12),
+                ]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Nothing here yet – with a short hint and, where it helps, the button to start
 class EmptyState extends StatelessWidget {
   final String text;
-  const EmptyState(this.text, {super.key});
+  final IconData? icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  const EmptyState(this.text, {super.key, this.icon, this.actionLabel, this.onAction});
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.all(24),
-        child: Center(child: Text(text, style: TextStyle(color: Theme.of(context).hintColor))),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon, size: 40, color: Theme.of(context).hintColor),
+              const SizedBox(height: 8),
+            ],
+            Text(text, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).hintColor)),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
+            ],
+          ]),
+        ),
       );
+}
+
+/// Delete straight away with "Undo" for a few seconds instead of asking first.
+/// The deletion happens when the message goes away without Undo.
+/// [hide] takes it off the screen at once, [restore] brings it back on Undo.
+void deleteWithUndo(BuildContext context, String message, Future<void> Function() delete,
+    {VoidCallback? hide, VoidCallback? restore}) {
+  final messenger = ScaffoldMessenger.of(context);
+  hide?.call();
+  messenger.hideCurrentSnackBar();
+  final bar = messenger.showSnackBar(SnackBar(
+    content: Text(message),
+    duration: const Duration(seconds: 5),
+    action: SnackBarAction(label: 'Undo', onPressed: () {}),
+  ));
+  bar.closed.then((reason) {
+    if (reason == SnackBarClosedReason.action) {
+      restore?.call();
+      return;
+    }
+    delete().catchError((Object e) {
+      restore?.call();
+      messenger.showSnackBar(SnackBar(content: Text(errorText(e))));
+    });
+  });
 }
 
 class StatusChip extends StatelessWidget {

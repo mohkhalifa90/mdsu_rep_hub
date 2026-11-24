@@ -79,7 +79,10 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
           );
         }
         return ListView(padding: const EdgeInsets.all(16), children: [
-          if (d.upcoming.isEmpty) const EmptyState('No upcoming meetings in your councils'),
+          if (d.upcoming.isEmpty)
+            const EmptyState(
+                'No upcoming meetings in your councils. When the Head of Education adds one, you get a notification.',
+                icon: Icons.event_available_outlined),
           Text('Send topics before each meeting and say how you will attend. Ask your classmates as early as you can.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
