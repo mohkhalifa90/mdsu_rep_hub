@@ -82,6 +82,7 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
     final title = TextEditingController(), loc = TextEditingController(text: 'Teams');
     DateTime date = day ?? DateTime.now().add(const Duration(days: 21));
     TimeOfDay time = const TimeOfDay(hour: 13, minute: 15);
+    bool food = true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -132,6 +133,15 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               ]),
               const SizedBox(height: 10),
               TextField(controller: loc, decoration: const InputDecoration(labelText: 'Location')),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: food,
+                onChanged: (v) => setD(() => food = v),
+                secondary: const Icon(Icons.restaurant_outlined),
+                title: const Text('Food is served'),
+                subtitle: const Text('Reps in the room are asked for food preferences (allergies)'),
+              ),
             ]),
           ),
           actions: [
@@ -145,7 +155,8 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
     final startsAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
     final name = title.text.trim().isEmpty ? (d.council(council)?.name ?? 'Meeting') : title.text.trim();
     if (await runAction(context,
-        () => Repo.createMeeting(councilId: council, title: name, startsAt: startsAt, location: loc.text.trim()),
+        () => Repo.createMeeting(
+            councilId: council, title: name, startsAt: startsAt, location: loc.text.trim(), servesFood: food),
         success: 'Meeting added ✓ The representatives of this council were notified')) {
       _reload();
     }
@@ -244,6 +255,8 @@ class _MeetingAgenda extends StatefulWidget {
 }
 
 class _MeetingAgendaState extends State<_MeetingAgenda> {
+  late bool _food = widget.meeting.servesFood;
+
   late Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>, Set<String>)> _f = _load();
   Future<(List<OpenIssue>, List<AgendaItem>, List<Attendance>, Set<String>, Set<String>)> _load() async => (
         await Repo.openIssuesForMeeting(widget.meeting.id),
@@ -324,8 +337,11 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
 
   Widget _attendance(List<Attendance> answers, Set<String> members) {
     final byMode = <String, List<String>>{'offline': [], 'online': [], 'absent': []};
+    final foodOf = <String, String>{}; // name → food text, for people in the room
     for (final a in answers) {
-      byMode[a.mode]?.add(widget.names[a.userId] ?? '?');
+      final n = widget.names[a.userId] ?? '?';
+      byMode[a.mode]?.add(n);
+      if (a.mode == 'offline') foodOf[n] = a.foodText;
     }
     final answered = answers.map((a) => a.userId).toSet();
     final missing = [for (final id in members) if (!answered.contains(id)) widget.names[id] ?? '?'];
@@ -342,9 +358,33 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
             ]),
             const SizedBox(height: 4),
             if (people.isEmpty) const Text('–'),
-            for (final n in people) Text(n),
+            for (final n in people)
+              _food && label == 'In the room'
+                  ? Text.rich(TextSpan(children: [
+                      TextSpan(text: n),
+                      if ((foodOf[n] ?? '').isNotEmpty && foodOf[n] != 'None')
+                        TextSpan(
+                            text: '\n  🍽 ${foodOf[n]}',
+                            style: TextStyle(fontSize: 12, color: Colors.orange.shade900)),
+                      if ((foodOf[n] ?? '').isEmpty)
+                        const TextSpan(text: '\n  🍽 not answered', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ]))
+                  : Text(n),
           ]),
         );
+    // food counts for the people in the room
+    final inRoom = answers.where((a) => a.mode == 'offline').toList();
+    final counts = <String, int>{};
+    final others = <String>[];
+    for (final a in inRoom) {
+      for (final f in a.food) {
+        counts[f] = (counts[f] ?? 0) + 1;
+      }
+      if (a.food.contains('other') && (a.foodOther ?? '').isNotEmpty) {
+        others.add('${a.foodOther} (${widget.names[a.userId] ?? '?'})');
+      }
+    }
+    final noFood = inRoom.where((a) => a.food.isEmpty).length;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -353,6 +393,34 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
           group('Online', Icons.videocam_outlined, Colors.blue.shade700, byMode['online']!),
           group('Can\'t attend', Icons.event_busy_outlined, Colors.red.shade700, byMode['absent']!),
           group('No answer', Icons.help_outline, Colors.grey.shade700, missing),
+          if (_food && inRoom.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(Icons.restaurant_outlined, size: 18, color: Colors.orange.shade900),
+                  const SizedBox(width: 6),
+                  Text('Food for ${inRoom.length} in the room',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900)),
+                ]),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final e in foodLabels.entries)
+                    if ((counts[e.key] ?? 0) > 0 && e.key != 'other') Chip(label: Text('${e.value}: ${counts[e.key]}')),
+                  if (noFood > 0)
+                    Chip(label: Text('Not answered: $noFood'), backgroundColor: Colors.grey.withValues(alpha: 0.15)),
+                ]),
+                if (others.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('Other: ${others.join(' · ')}'),
+                ],
+              ]),
+            ),
         ]),
       ),
     );
@@ -419,6 +487,19 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
                     },
                     child: const Text('Ask reps for input'),
                   ),
+                FilterChip(
+                  avatar: const Icon(Icons.restaurant_outlined, size: 18),
+                  label: const Text('Food served'),
+                  tooltip: 'Ask reps in the room for food preferences',
+                  selected: _food,
+                  onSelected: (v) async {
+                    setState(() => _food = v);
+                    final ok = await runAction(context, () => Repo.setServesFood(m.id, v),
+                        success: v ? 'Reps in the room will be asked for food preferences' : 'No food at this meeting');
+                    if (!ok && mounted) setState(() => _food = !v);
+                    if (ok) widget.onChanged();
+                  },
+                ),
                 FilledButton.icon(
                   icon: const Icon(Icons.download),
                   label: const Text('Agenda (Word)'),

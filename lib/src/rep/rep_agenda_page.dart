@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/posts.dart';
+import '../shared/food_picker.dart';
 import '../shared/format.dart';
 import '../shared/attendance_picker.dart';
 import '../shared/widgets.dart';
@@ -23,6 +24,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
   late Future<_AgendaData> _f = _load();
   String? _open;
   bool _showPast = false;
+  final _foodRev = <String, int>{}; // reload the food picker after the attendance is saved
 
   @override
   void initState() {
@@ -99,6 +101,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
               topics: d.items.where((a) => a.meetingId == m.id).length,
               noInput: d.noInput.contains(m.id),
               attendance: d.attendance[m.id],
+              foodKey: _foodRev[m.id] ?? 0,
               onOpen: () => setState(() => _open = m.id),
               onAttend: (mode) async {
                 final before = d.attendance[m.id];
@@ -115,6 +118,8 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
                     success: mode == null ? null : 'Saved: ${attendanceLabels[mode]}');
                 if (!ok && mounted) {
                   setState(() => put(before));
+                } else if (mounted) {
+                  setState(() => _foodRev[m.id] = (_foodRev[m.id] ?? 0) + 1);
                 }
               },
             ),
@@ -171,10 +176,12 @@ class _UpcomingCard extends StatelessWidget {
   final int topics;
   final bool noInput;
   final String? attendance;
+  final int foodKey;
   final VoidCallback onOpen;
   final ValueChanged<String?> onAttend;
   const _UpcomingCard(
       {required this.meeting,
+      required this.foodKey,
       required this.next,
       required this.council,
       required this.topics,
@@ -236,6 +243,15 @@ class _UpcomingCard extends StatelessWidget {
           Text(attendance == null ? 'Will you attend?' : 'You attend', style: t.textTheme.labelMedium),
           const SizedBox(height: 6),
           SizedBox(width: double.infinity, child: AttendancePicker(value: attendance, onChanged: onAttend)),
+          // food preferences open only for people in the room
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: attendance == 'offline' && m.servesFood
+                ? FoodPicker(key: ValueKey('${m.id}-$foodKey'), meetingId: m.id)
+                : const SizedBox(width: double.infinity),
+          ),
           const SizedBox(height: 6),
           Row(children: [
             Icon(icon, size: 18, color: color),
@@ -374,6 +390,7 @@ class _MeetingInputState extends State<_MeetingInput> {
   late final Future<List<OpenIssue>> _issues = Repo.openIssuesForMeeting(widget.meeting.id);
   late final Future<Post?> _finalAgenda = Repo.finalAgenda(widget.meeting.id);
   late String? _attendance = widget.attendance;
+  int _foodRev = 0;
   // null = not answered yet; true = has topics; false = nothing to add this time
   late bool? _hasTopics = widget.myItems.isNotEmpty ? true : (widget.noInput ? false : null);
 
@@ -397,6 +414,7 @@ class _MeetingInputState extends State<_MeetingInput> {
     if (!ok && mounted) {
       setState(() => _attendance = before);
     } else {
+      if (mounted) setState(() => _foodRev++);
       widget.onChanged();
     }
   }
@@ -441,6 +459,14 @@ class _MeetingInputState extends State<_MeetingInput> {
       ),
       const SectionTitle('How will you attend?'),
       AttendancePicker(value: _attendance, onChanged: _setAttendance),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: _attendance == 'offline' && m.servesFood
+            ? FoodPicker(key: ValueKey('${m.id}-$_foodRev'), meetingId: m.id, locked: m.isPast)
+            : const SizedBox(width: double.infinity),
+      ),
       FutureBuilder<List<OpenIssue>>(
         future: _issues,
         builder: (context, s) {

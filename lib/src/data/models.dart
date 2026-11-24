@@ -141,6 +141,7 @@ class Meeting {
   final DateTime startsAt;
   final String? location;
   final bool inputRequested;
+  final bool servesFood; // ask reps in the room for food preferences
   final DateTime? _inputDeadline;
   Meeting.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
@@ -149,6 +150,7 @@ class Meeting {
         startsAt = _dt(m['starts_at']),
         location = m['location'] as String?,
         inputRequested = (m['input_requested'] ?? false) as bool,
+        servesFood = (m['serves_food'] ?? true) as bool,
         _inputDeadline = m['input_deadline'] == null ? null : DateTime.parse(m['input_deadline'] as String);
   bool get isPast => startsAt.isBefore(DateTime.now());
   /// Last day reps can send agenda items (set by the database, default 2 days before).
@@ -188,11 +190,33 @@ class Attendance {
   final String meetingId;
   final String userId;
   final String mode; // offline | online | absent
+  final List<String> food; // food preferences when in the room (empty = not answered)
+  final String? foodOther;
   Attendance.fromMap(Map<String, dynamic> m)
       : meetingId = m['meeting_id'] as String,
         userId = m['user_id'] as String,
-        mode = m['mode'] as String;
+        mode = m['mode'] as String,
+        food = ((m['food'] as List?) ?? const []).cast<String>(),
+        foodOther = m['food_other'] as String?;
+
+  /// e.g. "Vegan, Gluten free, Nut allergy"
+  String get foodText => foodSummary(food, foodOther);
 }
+
+/// Food preference choices (same order as the old form)
+const foodLabels = {
+  'none': 'None',
+  'vegetarian': 'Vegetarian',
+  'vegan': 'Vegan',
+  'lactose_free': 'Lactose intolerant / dairy free',
+  'gluten_free': 'Gluten free',
+  'other': 'Other',
+};
+
+String foodSummary(List<String> food, String? other) => [
+      for (final f in food)
+        if (f == 'other') ((other ?? '').trim().isEmpty ? 'Other' : other!.trim()) else foodLabels[f] ?? f,
+    ].join(', ');
 
 const attendanceLabels = {'offline': 'In the room', 'online': 'Online (Teams)', 'absent': 'Can\'t attend'};
 

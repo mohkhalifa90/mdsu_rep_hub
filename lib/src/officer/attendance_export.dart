@@ -4,6 +4,24 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import 'save_file_io.dart' if (dart.library.js_interop) 'save_file_web.dart';
 
+const foodSv = {
+  'none': 'Ingen',
+  'vegetarian': 'Vegetarisk',
+  'vegan': 'Vegansk',
+  'lactose_free': 'Laktosfri/mjölkfri',
+  'gluten_free': 'Glutenfri',
+  'other': 'Annat',
+};
+
+String _foodSv(Attendance? a) {
+  if (a == null || a.mode != 'offline') return '';
+  if (a.food.isEmpty) return 'Inget svar';
+  return [
+    for (final f in a.food)
+      if (f == 'other' && (a.foodOther ?? '').isNotEmpty) a.foodOther! else foodSv[f] ?? f,
+  ].join(', ');
+}
+
 const attendanceSv = {'offline': 'På plats', 'online': 'Online', 'absent': 'Kan inte', null: 'Inget svar'};
 
 /// Attendance workbook: "Översikt" (counts per meeting) and "Namn" (one row per representative and meeting).
@@ -29,14 +47,31 @@ Future<String?> exportAttendanceXlsx({Semester? semester, required List<Council>
   final det = excel['Namn'];
 
   _row(sum, 0, ['Närvaro – studentrepresentanter${semester == null ? '' : ' (${semester.name})'}'], bold: true);
-  _row(sum, 2, ['Möte', 'Nämnd/Organ', 'Datum', 'Tid', 'På plats', 'Online', 'Kan inte', 'Inget svar', 'Totalt'],
+  _row(sum, 2,
+      ['Möte', 'Nämnd/Organ', 'Datum', 'Tid', 'På plats', 'Online', 'Kan inte', 'Inget svar', 'Totalt', 'Specialkost (på plats)'],
       bold: true);
-  _row(det, 0, ['Möte', 'Nämnd/Organ', 'Datum', 'Namn', 'E-post', 'Program', 'Närvaro'], bold: true);
+  _row(det, 0, ['Möte', 'Nämnd/Organ', 'Datum', 'Namn', 'E-post', 'Program', 'Närvaro', 'Specialkost'], bold: true);
 
   var r = 3, d = 1;
   final totals = [0, 0, 0, 0];
   for (final m in meetings) {
-    final mine = {for (final a in answers.where((a) => a.meetingId == m.id)) a.userId: a.mode};
+    final full = {for (final a in answers.where((a) => a.meetingId == m.id)) a.userId: a};
+    final mine = {for (final e in full.entries) e.key: e.value.mode};
+    // e.g. "Vegetarisk 3, Glutenfri 1, Annat: nötallergi"
+    final foodCount = <String, int>{};
+    final foodOther = <String>[];
+    for (final a in full.values.where((a) => a.mode == 'offline')) {
+      for (final f in a.food.where((f) => f != 'none' && f != 'other')) {
+        foodCount[f] = (foodCount[f] ?? 0) + 1;
+      }
+      if (a.food.contains('other') && (a.foodOther ?? '').isNotEmpty) foodOther.add(a.foodOther!);
+    }
+    final foodText = !m.servesFood
+        ? ''
+        : [
+            for (final e in foodCount.entries) '${foodSv[e.key]} ${e.value}',
+            if (foodOther.isNotEmpty) 'Annat: ${foodOther.join('; ')}',
+          ].join(', ');
     final ids = {...?membersByCouncil[m.councilId], ...mine.keys}.toList()
       ..sort((a, b) => (people[a]?.fullName ?? '').compareTo(people[b]?.fullName ?? ''));
     final counts = [
@@ -49,20 +84,20 @@ Future<String?> exportAttendanceXlsx({Semester? semester, required List<Council>
       totals[i] += counts[i];
     }
     final date = _d(m.startsAt);
-    _row(sum, r++, [m.title, councilNames[m.councilId] ?? '', date, _t(m.startsAt), ...counts, ids.length]);
+    _row(sum, r++, [m.title, councilNames[m.councilId] ?? '', date, _t(m.startsAt), ...counts, ids.length, foodText]);
     for (final id in ids) {
       final p = people[id];
       _row(det, d++, [m.title, councilNames[m.councilId] ?? '', date, p?.fullName ?? '', p?.email ?? '',
-        p?.program ?? '', attendanceSv[mine[id]]!]);
+        p?.program ?? '', attendanceSv[mine[id]]!, m.servesFood ? _foodSv(full[id]) : '']);
     }
   }
   _row(sum, r + 1, ['TOTALT', '', '', '', ...totals, totals.reduce((a, b) => a + b)], bold: true);
 
   for (final (col, w) in const [(0, 30.0), (1, 34.0), (2, 12.0), (3, 8.0), (4, 10.0), (5, 10.0), (6, 10.0),
-    (7, 11.0), (8, 8.0)]) {
+    (7, 11.0), (8, 8.0), (9, 40.0)]) {
     sum.setColumnWidth(col, w);
   }
-  for (final (col, w) in const [(0, 30.0), (1, 34.0), (2, 12.0), (3, 26.0), (4, 30.0), (5, 24.0), (6, 12.0)]) {
+  for (final (col, w) in const [(0, 30.0), (1, 34.0), (2, 12.0), (3, 26.0), (4, 30.0), (5, 24.0), (6, 12.0), (7, 30.0)]) {
     det.setColumnWidth(col, w);
   }
   excel.setDefaultSheet('Översikt');
@@ -78,6 +113,7 @@ void _row(Sheet s, int row, List<Object> values, {bool bold = false}) {
   for (var i = 0; i < values.length; i++) {
     final c = s.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: row));
     final v = values[i];
+    if (v is String && v.isEmpty) continue; // leave empty cells empty
     c.value = v is int ? IntCellValue(v) : TextCellValue('$v');
     if (bold) c.cellStyle = CellStyle(bold: true);
   }

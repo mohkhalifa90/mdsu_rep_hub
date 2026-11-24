@@ -575,6 +575,43 @@ select from pg_temp.as_user('Ahmed Saleh');
 insert into t select '25d channel overview has a latest post and unread count',
   (select count(*) > 0 and bool_and(unread >= 0) from public.channel_overview() where last_at is not null);
 
+
+-- 26. Food preferences
+select from pg_temp.as_user('Head of Education');
+insert into public.meetings (id, council_id, title, starts_at)
+select '00000000-0000-0000-0000-0000000f00d1', id, 'Food test', now() + interval '10 days'
+  from public.councils where type = 'siec' limit 1;
+insert into public.meetings (id, council_id, title, starts_at)
+select '00000000-0000-0000-0000-0000000f00d2', id, 'Food test 2', now() + interval '20 days'
+  from public.councils where type = 'siec' limit 1;
+select from pg_temp.as_user('Ahmed Saleh');
+select public.set_attendance('00000000-0000-0000-0000-0000000f00d1', 'online');
+do $$ begin
+  perform public.set_food('00000000-0000-0000-0000-0000000f00d1', array['vegan'], null);
+  insert into t values ('26 food needs In the room', false);
+exception when others then insert into t values ('26 food needs In the room', true); end $$;
+select public.set_attendance('00000000-0000-0000-0000-0000000f00d1', 'offline');
+do $$ begin
+  perform public.set_food('00000000-0000-0000-0000-0000000f00d1', array['other'], ' ');
+  insert into t values ('26b Other needs a text', false);
+exception when others then insert into t values ('26b Other needs a text', true); end $$;
+select public.set_food('00000000-0000-0000-0000-0000000f00d1', array['vegan', 'gluten_free', 'other', 'pizza'], 'Nut allergy');
+insert into t select '26c food saved (unknown choice dropped)',
+  (select food @> array['vegan','gluten_free','other'] and array_length(food,1) = 3 and food_other = 'Nut allergy'
+     from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d1' and user_id = auth.uid());
+select public.set_attendance('00000000-0000-0000-0000-0000000f00d2', 'offline');
+insert into t select '26d last choice carried to the next meeting',
+  (select food_other = 'Nut allergy' and 'vegan' = any (food)
+     from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
+select public.set_food('00000000-0000-0000-0000-0000000f00d2', array['none', 'vegan'], 'x');
+insert into t select '26e None stands alone, Other text cleared',
+  (select food = array['none'] and food_other is null
+     from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
+select public.set_attendance('00000000-0000-0000-0000-0000000f00d2', 'online');
+insert into t select '26f online clears food',
+  (select food is null from public.meeting_attendance
+    where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

@@ -205,13 +205,22 @@ class Repo {
       _list(await sb.from('meetings').select().order('starts_at', ascending: true), Meeting.fromMap); // oldest first
 
   static Future<void> createMeeting(
-          {required String councilId, required String title, required DateTime startsAt, String? location}) =>
+          {required String councilId,
+          required String title,
+          required DateTime startsAt,
+          String? location,
+          bool servesFood = true}) =>
       sb.from('meetings').insert({
         'council_id': councilId,
         'title': title,
         'starts_at': startsAt.toUtc().toIso8601String(),
         'location': location,
+        'serves_food': servesFood,
       });
+
+  /// Head of Education: is food served at this meeting (ask for food preferences)?
+  static Future<void> setServesFood(String meetingId, bool on) =>
+      sb.from('meetings').update({'serves_food': on}).eq('id', meetingId);
 
   static Future<void> deleteMeeting(String id) => sb.from('meetings').delete().eq('id', id);
 
@@ -286,6 +295,20 @@ class Repo {
     final rows = await sb.from('meeting_attendance').select('meeting_id, mode').eq('user_id', uid);
     return {for (final r in rows as List) r['meeting_id'] as String: r['mode'] as String};
   }
+
+  /// My food preference for a meeting I attend in the room (empty list = not answered yet)
+  static Future<(List<String>, String?)> myFood(String meetingId) async {
+    final r = await sb
+        .from('meeting_attendance')
+        .select('food, food_other')
+        .eq('meeting_id', meetingId)
+        .eq('user_id', uid)
+        .maybeSingle();
+    return (((r?['food'] as List?) ?? const []).cast<String>(), r?['food_other'] as String?);
+  }
+
+  static Future<void> setFood(String meetingId, List<String> food, String? other) =>
+      sb.rpc('set_food', params: {'p_meeting': meetingId, 'p_food': food, 'p_other': other});
 
   static Future<void> setAttendance(String meetingId, String? mode) =>
       sb.rpc('set_attendance', params: {'p_meeting': meetingId, 'p_mode': mode});
