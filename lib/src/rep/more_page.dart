@@ -95,8 +95,12 @@ class _RepFollowUpsPageState extends State<RepFollowUpsPage> {
   Widget build(BuildContext context) => Scaffold(
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () async {
-            final councils = widget.data.myCouncils.where((c) => !c.isSiec).toList();
-            if (await showAddIssueDialog(context, councils: councils.isEmpty ? widget.data.myCouncils : councils)) {
+            // SIEC is open to every rep, plus the councils they sit on
+            final councils = [
+              ...widget.data.councils.where((c) => c.isSiec),
+              ...widget.data.myCouncils.where((c) => !c.isSiec),
+            ];
+            if (await showAddIssueDialog(context, councils: councils)) {
               _reload();
             }
           },

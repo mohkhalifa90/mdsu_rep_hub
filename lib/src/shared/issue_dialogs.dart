@@ -7,6 +7,11 @@ import 'widgets.dart';
 
 /// Log an issue raised in a council meeting (SIEC protocol 4.4).
 Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> councils}) async {
+  // SIEC first (most meetings are SIEC), then A–Z
+  councils = [...councils]..sort((a, b) {
+      if (a.isSiec != b.isSiec) return a.isSiec ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
   if (councils.isEmpty) {
     showSnack(context, 'You are not a member of any council yet');
     return false;
@@ -26,13 +31,21 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
           width: 460,
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<String>(
-                value: council,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Council'),
-                items: [for (final c in councils) DropdownMenuItem(value: c.id, child: Text(c.name))],
-                onChanged: (v) => setD(() {
-                  council = v ?? council;
+              // type a few letters to filter the list
+              DropdownMenu<String>(
+                initialSelection: council,
+                expandedInsets: EdgeInsets.zero,
+                label: const Text('Council (type to search)'),
+                enableFilter: true,
+                enableSearch: true,
+                requestFocusOnTap: true,
+                menuHeight: 320,
+                dropdownMenuEntries: [
+                  for (final c in councils) DropdownMenuEntry<String>(value: c.id, label: c.name),
+                ],
+                onSelected: (v) => setD(() {
+                  if (v == null) return;
+                  council = v;
                   meeting = null;
                 }),
               ),

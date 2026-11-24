@@ -43,7 +43,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
             FilledButton.icon(
               onPressed: () async {
                 if (await showAddIssueDialog(context,
-                    councils: widget.data.councils.where((c) => !c.isSiec).toList())) {
+                    councils: widget.data.councils)) {
                   _reload();
                 }
               },
