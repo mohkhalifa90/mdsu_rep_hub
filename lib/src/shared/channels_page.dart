@@ -11,6 +11,7 @@ import 'format.dart';
 import 'interactions.dart';
 import 'theme.dart';
 import 'avatars.dart';
+import 'profile_card.dart';
 import 'widgets.dart';
 
 /// Teams-like channels. Used by both the rep app and the officer app.
@@ -66,6 +67,13 @@ class _ChannelsPageState extends State<ChannelsPage> {
   void initState() {
     super.initState();
     _loadOverview();
+    Badges.instance.addListener(_loadOverview); // new posts / notifications → refresh the highlights
+  }
+
+  @override
+  void dispose() {
+    Badges.instance.removeListener(_loadOverview);
+    super.dispose();
   }
 
   Future<void> _loadOverview() async {
@@ -209,13 +217,23 @@ class _ChannelsPageState extends State<ChannelsPage> {
         final list = ListView(children: [
           for (final c in channels)
             ListTile(
-              leading: CircleAvatar(
-                backgroundColor: channelColor(c).withValues(alpha: 0.15),
-                child: Icon(
-                    c.name.toLowerCase().contains('resource')
-                        ? Icons.folder_outlined
-                        : (c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined),
-                    color: channelColor(c)),
+              // something new in here: tinted row with a coloured bar on the left
+              tileColor: (_ov[c.id]?.unread ?? 0) > 0 ? channelColor(c).withValues(alpha: 0.10) : null,
+              shape: (_ov[c.id]?.unread ?? 0) > 0
+                  ? Border(left: BorderSide(color: channelColor(c), width: 4))
+                  : null,
+              leading: Badge(
+                isLabelVisible: (_ov[c.id]?.unread ?? 0) > 0,
+                smallSize: 10,
+                backgroundColor: Colors.red,
+                child: CircleAvatar(
+                  backgroundColor: channelColor(c).withValues(alpha: 0.15),
+                  child: Icon(
+                      c.name.toLowerCase().contains('resource')
+                          ? Icons.folder_outlined
+                          : (c.officerOnly ? Icons.campaign_outlined : Icons.forum_outlined),
+                      color: channelColor(c)),
+                ),
               ),
               selectedTileColor: channelColor(c).withValues(alpha: 0.10),
               selectedColor: channelColor(c),
@@ -356,10 +374,10 @@ class _ChatViewState extends State<ChatView> {
     super.dispose();
   }
 
-  /// Representatives: opening the channel (and every new message while it is open) counts as
-  /// having seen the Head of Education's messages.
+  /// Opening the channel (and every new message while it is open) counts as having seen it:
+  /// reps see the Head of Education's posts, and everyone's notifications about this channel are read.
   void _markSeen(int count) {
-    if (_officer || count == _seenCount) return;
+    if (count == _seenCount) return;
     _seenCount = count;
     Repo.markChannelRead(widget.channel.id).then((_) => Badges.instance.refresh()).catchError((_) {});
   }
@@ -516,9 +534,18 @@ class _ChatViewState extends State<ChatView> {
         Expanded(
           child: Text.rich(
             TextSpan(children: [
-              TextSpan(
-                  text: widget.names[m.authorId] ?? 'Someone',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => showProfileCard(context, m.authorId, name: widget.names[m.authorId]),
+                    child: Text(widget.names[m.authorId] ?? 'Someone',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
               TextSpan(
                   text: ' · ${fmtDateTime(m.createdAt)}'
                       '${m.isAnnouncement ? ' · announcement' : ''}${m.editedAt != null ? ' · edited' : ''}'),

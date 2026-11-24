@@ -175,7 +175,7 @@ class _RepsPageState extends State<RepsPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           title: Row(children: [
-            UserAvatar(id: p.id, name: p.fullName, radius: 22),
+            UserAvatar(id: p.id, name: p.fullName, radius: 22, tappable: false),
             const SizedBox(width: 12),
             Expanded(child: Text(p.fullName.isEmpty ? (p.email ?? '') : p.fullName)),
           ]),
@@ -331,7 +331,7 @@ class _RepsPageState extends State<RepsPage> {
                 icon: const Icon(Icons.key_outlined),
                 label: const Text('Reset password…'),
                 onPressed: () => showResetPasswordDialog(ctx,
-                    userId: p.id, name: p.fullName.isEmpty ? (p.email ?? '') : p.fullName),
+                    userId: p.id, name: p.fullName.isEmpty ? (p.email ?? '') : p.fullName, email: p.email),
               ),
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
             FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
@@ -397,37 +397,14 @@ class _RepsPageState extends State<RepsPage> {
           'Email: ${email.text.trim()}\nTemporary password: $pw\n'
           'You will be asked to choose your own password.';
       _reload();
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Account created ✓'),
-          content: SizedBox(
-            width: 440,
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Send this to the representative (Teams or email):'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(8)),
-                child: SelectableText(message),
-              ),
-              const SizedBox(height: 8),
-              const Text('Next: open them in the list and set program, department, councils and membership.'),
-            ]),
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: message));
-                if (ctx.mounted) showSnack(ctx, 'Copied');
-              },
-              icon: const Icon(Icons.copy),
-              label: const Text('Copy message'),
-            ),
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
-          ],
-        ),
+      await showSendMessage(
+        context,
+        title: 'Account created ✓',
+        intro: 'Send this to the representative:',
+        email: email.text.trim(),
+        subject: 'Your MDSU Rep Hub account',
+        message: message,
+        footer: 'Next: open them in the list and set program, department, councils and membership.',
       );
     } catch (e) {
       if (mounted) showSnack(context, errorText(e));

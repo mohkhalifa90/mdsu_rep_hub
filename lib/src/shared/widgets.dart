@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/repo.dart';
+import 'send_message.dart';
 
 /// Turns server errors into readable text.
 String errorText(Object e) {
@@ -439,7 +440,8 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
 }
 
 /// Head of Education: give a representative a temporary password.
-Future<void> showResetPasswordDialog(BuildContext context, {required String userId, required String name}) async {
+Future<void> showResetPasswordDialog(BuildContext context,
+    {required String userId, required String name, String? email}) async {
   final pw = TextEditingController(text: generateTempPassword());
   String? error;
   bool done = false, busy = false;
@@ -490,7 +492,21 @@ Future<void> showResetPasswordDialog(BuildContext context, {required String user
                           });
                           try {
                             await Repo.adminResetPassword(userId, pw.text);
-                            setD(() => done = true);
+                            if (!ctx.mounted) return;
+                            Navigator.pop(ctx);
+                            // ready message with Copy / Email / Teams
+                            await showSendMessage(
+                              context,
+                              title: 'Password reset ✓',
+                              intro: 'Send this to $name (check it is really them):',
+                              email: email,
+                              subject: 'MDSU Rep Hub – your temporary password',
+                              message: 'Hi ${name.split(' ').first}! Your MDSU Rep Hub password has been reset.\n'
+                                  'Open https://mdsu-rep-hub.pages.dev (or the app) and sign in with\n'
+                                  '${email == null ? '' : 'Email: $email\n'}Temporary password: ${pw.text}\n'
+                                  'You will be asked to choose your own password.',
+                            );
+                            return;
                           } catch (e) {
                             setD(() => error = errorText(e));
                           }

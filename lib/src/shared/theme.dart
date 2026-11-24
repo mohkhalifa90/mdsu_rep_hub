@@ -370,7 +370,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
             builder: (context, _) {
               final has = Avatars.instance.of(Repo.uid) != null;
               return Row(children: [
-                UserAvatar(id: Repo.uid, name: th.myName, radius: 28),
+                UserAvatar(id: Repo.uid, name: th.myName, radius: 28, tappable: false),
                 const SizedBox(width: 16),
                 if (_photoBusy)
                   const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))

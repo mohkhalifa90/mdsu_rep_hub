@@ -71,7 +71,7 @@ class MorePage extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(children: [
-              UserAvatar(id: me.id, name: me.fullName, radius: 30),
+              UserAvatar(id: me.id, name: me.fullName, radius: 30, tappable: false),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -462,7 +462,7 @@ class _ProfilePageState extends State<ProfilePage> {
           customBorder: const CircleBorder(),
           onTap: () => showAppearanceSheet(context),
           child: Stack(alignment: Alignment.bottomRight, children: [
-            UserAvatar(id: me.id, name: me.fullName, radius: 44),
+            UserAvatar(id: me.id, name: me.fullName, radius: 44, tappable: false),
             const CircleAvatar(radius: 14, child: Icon(Icons.photo_camera_outlined, size: 16)),
           ]),
         ),

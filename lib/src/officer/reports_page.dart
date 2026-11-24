@@ -6,6 +6,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/charts.dart';
 import '../shared/format.dart';
+import '../shared/send_message.dart';
 import '../shared/widgets.dart';
 import 'excel_export.dart';
 import 'officer_shell.dart';
@@ -114,6 +115,7 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   Future<void> _review(ReportRow r, String action) async {
+    if (action == 'paid_message') return _paidMessage(r); // only the message again
     String? comment;
     if (action == 'return') {
       comment = await promptText(context,
@@ -126,7 +128,26 @@ class _ReportsPageState extends State<ReportsPage> {
     if (await runAction(context, () => Repo.reviewReport(r.reportId!, action, comment: comment),
         success: 'Updated – ${r.fullName} is notified')) {
       _reload();
+      if (action == 'paid' && mounted) await _paidMessage(r);
     }
+  }
+
+  /// "Your report is paid" with the payslip link – ready to copy, email (Outlook) or send in Teams.
+  Future<void> _paidMessage(ReportRow r) async {
+    final (url, label) = await Repo.payslipLink();
+    final email = await Repo.emailOf(r.userId);
+    if (!mounted) return;
+    final sem = widget.data.semester?.name ?? '';
+    await showSendMessage(
+      context,
+      title: 'Paid ✓ – tell ${r.fullName.split(' ').first}',
+      intro: '${r.fullName} got a notification in the app. You can also send this:',
+      email: email,
+      subject: 'MDSU – your time report is paid',
+      message: 'Hi ${r.fullName.split(' ').first}! Your time report${sem.isEmpty ? '' : ' for $sem'} has been paid'
+          '${r.amount > 0 ? ' (${sek(r.amount)})' : ''}. Thank you for your work as a student representative!'
+          '${url == null ? '' : '\nYou can see your payslip in $label: $url'}',
+    );
   }
 
   @override
@@ -317,6 +338,11 @@ class _ReportDetail extends StatelessWidget {
               ],
               if (row.status == 'approved')
                 FilledButton(onPressed: () => onReview(row, 'paid'), child: const Text('Mark as paid')),
+              if (row.status == 'paid')
+                OutlinedButton.icon(
+                    onPressed: () => onReview(row, 'paid_message'),
+                    icon: const Icon(Icons.forward_to_inbox_outlined),
+                    label: const Text('Payment message')),
             ]),
             if (row.status == 'draft' || row.status == 'returned')
               Padding(

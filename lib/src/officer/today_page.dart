@@ -154,7 +154,7 @@ class _TodayPageState extends State<TodayPage> {
                     for (final p in waitingList.take(5))
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: UserAvatar(id: p.id, name: p.fullName),
+                        leading: UserAvatar(id: p.id, name: p.fullName, tappable: false),
                         title: Text(p.fullName),
                         subtitle: Text(p.email ?? ''),
                         trailing: Wrap(spacing: 4, children: [

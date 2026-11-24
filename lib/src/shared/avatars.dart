@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repo.dart';
+import 'profile_card.dart';
 
 /// Everyone's profile photo, loaded once when the app starts and kept up to date.
 class Avatars extends ChangeNotifier {
@@ -43,7 +44,8 @@ class UserAvatar extends StatelessWidget {
   final String? id;
   final String name;
   final double radius;
-  const UserAvatar({super.key, required this.id, required this.name, this.radius = 16});
+  final bool tappable; // tap opens the person's profile card
+  const UserAvatar({super.key, required this.id, required this.name, this.radius = 16, this.tappable = true});
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -51,12 +53,17 @@ class UserAvatar extends StatelessWidget {
         builder: (context, _) {
           final url = Avatars.instance.of(id);
           final color = _palette[(id ?? name).hashCode.abs() % _palette.length];
-          return CircleAvatar(
+          final avatar = CircleAvatar(
             radius: radius,
             backgroundColor: color.withValues(alpha: 0.18),
             foregroundImage: url == null ? null : NetworkImage(url),
             child: Text(initialsOf(name),
                 style: TextStyle(fontSize: radius * 0.8, fontWeight: FontWeight.w600, color: color)),
+          );
+          if (!tappable || id == null) return avatar;
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(onTap: () => showProfileCard(context, id!, name: name), child: avatar),
           );
         },
       );

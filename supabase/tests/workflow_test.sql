@@ -612,6 +612,27 @@ insert into t select '26f online clears food',
   (select food is null from public.meeting_attendance
     where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
 
+
+-- 27. Channels with unread notifications stand out; opening the channel clears them
+reset role;
+insert into public.notifications (user_id, title, link)
+select (select id from public.profiles where full_name = 'Head of Education'), 'New comment',
+       'chat/' || (select id from public.channels order by name limit 1) || '/x';
+set role authenticated;
+select from pg_temp.as_user('Head of Education');
+insert into t select '27 officer sees the unread channel',
+  (select unread >= 1 from public.channel_overview() where channel_id = (select id from public.channels order by name limit 1))
+  and (public.my_badges()->>'channels')::int >= 1;
+select public.mark_channel_read((select id from public.channels order by name limit 1));
+insert into t select '27b opening the channel reads its notifications',
+  not exists (select 1 from public.notifications where user_id = auth.uid() and read_at is null
+              and link like 'chat/' || (select id from public.channels order by name limit 1) || '%');
+
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '27c profile card shows name, hides email unless shared',
+  (select c->>'full_name' = 'Head of Education' and c ? 'councils' from (select public.profile_card(
+     '00000000-0000-0000-0000-00000000000a') c) x);
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

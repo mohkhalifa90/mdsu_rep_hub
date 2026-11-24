@@ -518,6 +518,16 @@ class Repo {
     return url;
   }
 
+  /// Head of Education: a person's email
+  static Future<String?> emailOf(String userId) async =>
+      (await sb.from('profiles').select('email').eq('id', userId).maybeSingle())?['email'] as String?;
+
+  /// What a profile card shows (name, photo, programme, department, councils, email when allowed)
+  static Future<Map<String, dynamic>?> profileCard(String userId) async {
+    final r = await sb.rpc('profile_card', params: {'p_user': userId});
+    return r == null ? null : (r as Map).cast<String, dynamic>();
+  }
+
   /// Everyone's profile photo (id → url)
   static Future<Map<String, String>> avatars() async {
     final rows = await sb.from('member_names').select('id, avatar_url').not('avatar_url', 'is', null);
