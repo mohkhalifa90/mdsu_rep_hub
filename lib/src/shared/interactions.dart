@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
@@ -10,6 +12,7 @@ import 'widgets.dart';
 // the tutoring board. Emoji reactions, comments, @tags, edit and delete look and work the same.
 
 const reactionEmojis = ['👍', '❤️', '🎉', '👏', '😂', '🙏'];
+const reactionNames = {'👍': 'Like', '❤️': 'Love', '🎉': 'Celebrate', '👏': 'Clap', '😂': 'Haha', '🙏': 'Thanks'};
 
 /// Choose people to tag. "@Name" is added to [into] and their ids to [tags].
 Future<void> pickTags(BuildContext context,
@@ -214,17 +217,156 @@ class ReactionBar extends StatelessWidget {
             ),
           );
         }),
-      PopupMenuButton<String>(
-        tooltip: 'React',
-        icon: Icon(Icons.add_reaction_outlined, size: 18, color: t.colorScheme.onSurfaceVariant),
-        onSelected: (emoji) => _go(context, emoji, true),
-        itemBuilder: (_) => [
-          for (final e in reactionEmojis)
-            PopupMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 22))),
-        ],
-      ),
+      ReactButton(onPick: (emoji) => _go(context, emoji, true)),
     ]);
   }
+}
+
+/// The react button. Like Facebook: hover over it (computer) or tap it (phone) and a row of
+/// emojis floats above it; it disappears when the mouse leaves or you tap somewhere else.
+class ReactButton extends StatefulWidget {
+  final void Function(String emoji) onPick;
+  const ReactButton({super.key, required this.onPick});
+  @override
+  State<ReactButton> createState() => _ReactButtonState();
+}
+
+class _ReactButtonState extends State<ReactButton> with SingleTickerProviderStateMixin {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  late final _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 170));
+  Timer? _showT, _hideT;
+
+  void _show({Duration delay = Duration.zero}) {
+    _hideT?.cancel();
+    _showT?.cancel();
+    _showT = Timer(delay, () {
+      if (!mounted) return;
+      if (!_portal.isShowing) _portal.show();
+      _anim.forward();
+    });
+  }
+
+  void _hide({Duration delay = Duration.zero}) {
+    _showT?.cancel();
+    _hideT?.cancel();
+    _hideT = Timer(delay, () async {
+      if (!mounted || !_portal.isShowing) return;
+      await _anim.reverse();
+      if (mounted && _anim.isDismissed && _portal.isShowing) _portal.hide();
+    });
+  }
+
+  @override
+  void dispose() {
+    _showT?.cancel();
+    _hideT?.cancel();
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return TapRegion(
+      groupId: this,
+      onTapOutside: (_) => _hide(),
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (_) => Stack(children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              child: CompositedTransformFollower(
+                link: _link,
+                targetAnchor: Alignment.topLeft,
+                followerAnchor: Alignment.bottomLeft,
+                offset: const Offset(-6, -2),
+                child: TapRegion(
+                  groupId: this,
+                  child: MouseRegion(
+                    onEnter: (_) => _hideT?.cancel(),
+                    onExit: (_) => _hide(delay: const Duration(milliseconds: 250)),
+                    child: FadeTransition(
+                      opacity: _anim,
+                      child: ScaleTransition(
+                        alignment: Alignment.bottomLeft,
+                        scale: CurvedAnimation(parent: _anim, curve: Curves.easeOutBack),
+                        child: Material(
+                          elevation: 8,
+                          shadowColor: Colors.black45,
+                          color: t.colorScheme.surfaceContainerHigh,
+                          shape: const StadiumBorder(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              for (final e in reactionEmojis)
+                                _EmojiChoice(emoji: e, onTap: () {
+                                  widget.onPick(e);
+                                  _hide();
+                                }),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ]),
+          child: MouseRegion(
+            onEnter: (_) => _show(delay: const Duration(milliseconds: 300)),
+            onExit: (_) => _hide(delay: const Duration(milliseconds: 300)),
+            child: IconButton(
+              tooltip: null,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.add_reaction_outlined, size: 18, color: t.colorScheme.onSurfaceVariant),
+              onPressed: () => _show(), // a tap outside closes it
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One emoji in the row: grows under the mouse and shows its name.
+class _EmojiChoice extends StatefulWidget {
+  final String emoji;
+  final VoidCallback onTap;
+  const _EmojiChoice({required this.emoji, required this.onTap});
+  @override
+  State<_EmojiChoice> createState() => _EmojiChoiceState();
+}
+
+class _EmojiChoiceState extends State<_EmojiChoice> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Tooltip(
+            message: reactionNames[widget.emoji] ?? '',
+            waitDuration: const Duration(milliseconds: 250),
+            child: AnimatedScale(
+              scale: _hover ? 1.4 : 1,
+              alignment: Alignment.bottomCenter,
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+                child: Text(widget.emoji, style: const TextStyle(fontSize: 26)),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 /// A small "pop" (grow and settle) when [trigger] changes – used for reactions.

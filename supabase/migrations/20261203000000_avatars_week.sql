@@ -59,3 +59,22 @@ begin
 end $$;
 revoke execute on function public.weekly_summary() from public, anon;
 grant execute on function public.weekly_summary() to authenticated;
+
+-- ---------- channel list: latest post and unread posts ----------
+-- Runs with the caller's rights, so people only see channels they can read.
+create or replace function public.channel_overview()
+returns table (channel_id uuid, last_body text, last_file text, last_at timestamptz, last_author uuid, unread int)
+language sql stable set search_path = public as $$
+  select c.id, lm.body, lm.file_name, lm.created_at, lm.author_id,
+         (select count(*)::int from public.messages m
+            join public.profiles a on a.id = m.author_id and a.role in ('officer', 'admin')
+           where m.channel_id = c.id and m.parent_id is null and m.author_id <> auth.uid()
+             and m.created_at > now() - interval '60 days'
+             and not exists (select 1 from public.message_reads r where r.message_id = m.id and r.user_id = auth.uid()))
+  from public.channels c
+  left join lateral (select m.body, m.file_name, m.created_at, m.author_id from public.messages m
+                      where m.channel_id = c.id and m.parent_id is null
+                      order by m.created_at desc limit 1) lm on true
+$$;
+revoke execute on function public.channel_overview() from public, anon;
+grant  execute on function public.channel_overview() to authenticated;

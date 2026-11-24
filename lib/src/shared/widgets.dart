@@ -549,3 +549,55 @@ Widget pageSwitch(Object key, Widget child) => AnimatedSwitcher(
           Stack(fit: StackFit.expand, children: [...previous, if (current != null) current]),
       child: KeyedSubtree(key: ValueKey(key), child: child),
     );
+
+/// A scrolling page whose content stays a comfortable width on big screens.
+class CenteredList extends StatelessWidget {
+  final List<Widget> children;
+  final double maxWidth;
+  const CenteredList({super.key, required this.children, this.maxWidth = 760});
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        final side = c.maxWidth > maxWidth + 32 ? (c.maxWidth - maxWidth) / 2 : 12.0;
+        return ListView(padding: EdgeInsets.fromLTRB(side, 16, side, 24), children: children);
+      });
+}
+
+/// A calendar-style date: month above, day below.
+class DateTile extends StatelessWidget {
+  final DateTime date;
+  final bool muted;
+  final double width;
+  const DateTile(this.date, {super.key, this.muted = false, this.width = 54});
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final bg = muted ? t.colorScheme.surfaceContainerHighest : t.colorScheme.primaryContainer;
+    final fg = muted ? t.colorScheme.onSurfaceVariant : t.colorScheme.onPrimaryContainer;
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    return Container(
+      width: width,
+      padding: EdgeInsets.symmetric(vertical: width > 50 ? 8 : 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(months[date.month - 1], style: t.textTheme.labelSmall?.copyWith(color: fg, letterSpacing: 0.8)),
+        Text('${date.day}',
+            style: (width > 50 ? t.textTheme.headlineSmall : t.textTheme.titleMedium)
+                ?.copyWith(color: fg, fontWeight: FontWeight.bold, height: 1.1)),
+      ]),
+    );
+  }
+}
+
+/// "Today", "Tomorrow", "In 5 days", "Yesterday", "3 days ago"
+String relativeDay(DateTime d) {
+  final n = daysUntilDate(d);
+  if (n == 0) return 'Today';
+  if (n == 1) return 'Tomorrow';
+  if (n == -1) return 'Yesterday';
+  return n > 1 ? 'In $n days' : '${-n} days ago';
+}
+
+int daysUntilDate(DateTime d) {
+  final now = DateTime.now();
+  return DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+}

@@ -44,6 +44,61 @@ class _HoursPageState extends State<HoursPage> {
     if (await runAction(context, Repo.submitReport, success: 'Submitted ✓')) _reload();
   }
 
+  Widget _note(BuildContext context, IconData icon, Color color, String text) => Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: color))),
+        ]),
+      );
+
+  Widget _entry(BuildContext context, TimeEntry e, bool hasNotes, bool locked) {
+    final t = Theme.of(context);
+    final (icon, color) = activityLook(e.activity);
+    final d = widget.data;
+    return ListTile(
+      leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.14), child: Icon(icon, color: color, size: 20)),
+      title: Text(activityLabels[e.activity] ?? e.activity, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${fmtDate(e.workDate)}${e.fromText == null ? '' : ' · ${e.fromText}–${e.toText}'}'
+            '${d.council(e.councilId) == null ? '' : ' · ${d.council(e.councilId)!.name}'}',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (e.description.isNotEmpty) Text(e.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 4),
+        hasNotes
+            ? Row(children: [
+                Icon(Icons.attach_file, size: 14, color: Colors.green.shade700),
+                Text(' Notes attached', style: t.textTheme.labelSmall?.copyWith(color: Colors.green.shade700)),
+              ])
+            : Row(children: [
+                Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange.shade800),
+                Text(locked ? ' No notes' : ' Tap to attach notes',
+                    style: t.textTheme.labelSmall?.copyWith(color: Colors.orange.shade800)),
+              ]),
+      ]),
+      isThreeLine: true,
+      trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Text(fmtMinutes(e.minutes), style: const TextStyle(fontWeight: FontWeight.bold)),
+        if (!locked)
+          InkWell(
+            onTap: () async {
+              if (await confirm(context, 'Delete entry?', e.description, ok: 'Delete') &&
+                  await runAction(context, () => Repo.deleteEntry(e.id))) {
+                _reload();
+              }
+            },
+            child: Icon(Icons.delete_outline, size: 18, color: t.colorScheme.onSurfaceVariant),
+          ),
+      ]),
+      onTap: locked || hasNotes
+          ? null
+          : () async {
+              if (await pickAndUploadNote(context, e.id)) _reload();
+            },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = widget.data;
@@ -57,29 +112,55 @@ class _HoursPageState extends State<HoursPage> {
         final minutes = entries.fold<int>(0, (a, e) => a + e.minutes);
         final halves = entries.fold<int>(0, (a, e) => a + e.halfHours);
         final withoutNotes = entries.where((e) => !withNotes.contains(e.id)).length;
+        final t = Theme.of(context);
+        final status = r?.status ?? 'draft';
+        final left = daysUntil(d.semester!.reportDeadline);
+        // group the entries by month, newest month first
+        final byMonth = <DateTime, List<TimeEntry>>{};
+        for (final e in [...entries]..sort((a, b) => b.workDate.compareTo(a.workDate))) {
+          byMonth.putIfAbsent(DateTime(e.workDate.year, e.workDate.month), () => []).add(e);
+        }
         return Stack(children: [
-          ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 96), children: [
+          CenteredList(children: [
             Card(
+              color: t.colorScheme.primary,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text('${fmtHours(minutes)} h',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    const Spacer(),
-                    StatusChip.report(r?.status ?? 'draft'),
+                child: DefaultTextStyle(
+                  style: TextStyle(color: t.colorScheme.onPrimary),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${d.semester!.name} · time report', style: TextStyle(color: t.colorScheme.onPrimary.withValues(alpha: 0.85))),
+                    const SizedBox(height: 4),
+                    Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text('${fmtHours(minutes)} h',
+                          style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: t.colorScheme.onPrimary)),
+                      const SizedBox(width: 10),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text('≈ ${sek(d.me.isMember ? halves * d.semester!.halfHourRate : 0)}'),
+                      ),
+                    ]),
+                    Text('$halves started half hours × ${d.semester!.halfHourRate} SEK',
+                        style: TextStyle(fontSize: 12, color: t.colorScheme.onPrimary.withValues(alpha: 0.8))),
+                    if (!locked && left >= 0)
+                      Text('$left day${left == 1 ? '' : 's'} to the deadline (${fmtDateY(d.semester!.reportDeadline)})',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                   ]),
-                  Text('$halves started half hours × ${d.semester!.halfHourRate} SEK = '
-                      '${sek(d.me.isMember ? halves * d.semester!.halfHourRate : 0)}'),
-                  Text('Each activity is rounded up to started half hours, like the Excel time report.',
-                      style: Theme.of(context).textTheme.bodySmall),
+                ),
+              ),
+            ),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ReportSteps(status: status),
                   if (r?.status == 'paid')
                     FutureBuilder<(String?, String)>(
                       future: Repo.payslipLink(),
                       builder: (context, s) => s.data?.$1 == null
                           ? const SizedBox.shrink()
                           : Padding(
-                              padding: const EdgeInsets.only(top: 8),
+                              padding: const EdgeInsets.only(top: 12),
                               child: FilledButton.tonalIcon(
                                 onPressed: () =>
                                     launchUrl(Uri.parse(s.data!.$1!), mode: LaunchMode.externalApplication),
@@ -89,64 +170,45 @@ class _HoursPageState extends State<HoursPage> {
                             ),
                     ),
                   if (r?.status == 'returned' && (r?.reviewerComment ?? '').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('Returned: ${r!.reviewerComment}', style: TextStyle(color: Colors.orange.shade900)),
-                    ),
+                    _note(context, Icons.undo, Colors.orange.shade900, 'Returned: ${r!.reviewerComment}'),
+                  if (locked)
+                    _note(context, Icons.lock_outline, t.colorScheme.onSurfaceVariant,
+                        'Submitted and locked until it is returned or the next semester starts.'),
                   if (!d.me.isMember)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text('You are not a union member, so hours are not paid. Become a member at mdsu.se.',
-                          style: TextStyle(color: Colors.red)),
-                    ),
+                    _note(context, Icons.error_outline, Colors.red,
+                        'You are not a union member, so hours are not paid. Become a member at mdsu.se.'),
                   if (r != null && !r.hasPersonalNumber)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text('Add your personal number (or samordningsnummer) under More → My profile to get paid.',
-                          style: TextStyle(color: Colors.red)),
-                    ),
+                    _note(context, Icons.error_outline, Colors.red,
+                        'Add your personal number (or samordningsnummer) under More → My profile to get paid.'),
+                  if (withoutNotes > 0 && !locked)
+                    _note(context, Icons.attach_file, Colors.orange.shade800,
+                        '$withoutNotes entr${withoutNotes == 1 ? 'y has' : 'ies have'} no notes – tap one to attach them.'),
                 ]),
               ),
             ),
-            if (locked)
-              const Padding(
-                padding: EdgeInsets.all(8),
-                child: Text('Your report is submitted and locked until it is returned or the next semester starts.',
-                    textAlign: TextAlign.center),
-              ),
             if (entries.isEmpty)
               const EmptyState('No time logged yet. Tap “Log time” after each meeting or task.', icon: Icons.timer_outlined),
-            for (final e in entries)
-              Card(
-                child: ListTile(
-                  title: Text(activityLabels[e.activity] ?? e.activity),
-                  subtitle: Text('${fmtDate(e.workDate)}${e.fromText == null ? '' : ' · ${e.fromText}–${e.toText}'}'
-                      ' · ${d.council(e.councilId)?.name ?? ''}\n${e.description}'),
-                  isThreeLine: true,
-                  leading: Icon(withNotes.contains(e.id) ? Icons.attach_file : Icons.warning_amber_outlined,
-                      color: withNotes.contains(e.id) ? Colors.green : Colors.orange),
-                  trailing: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text(fmtMinutes(e.minutes), style: const TextStyle(fontWeight: FontWeight.bold)),
-                    if (!locked)
-                      InkWell(
-                        onTap: () async {
-                          if (await confirm(context, 'Delete entry?', e.description, ok: 'Delete') &&
-                              await runAction(context, () => Repo.deleteEntry(e.id))) {
-                            _reload();
-                          }
-                        },
-                        child: const Icon(Icons.delete_outline, size: 18),
-                      ),
-                  ]),
-                  onTap: locked || withNotes.contains(e.id)
-                      ? null
-                      : () async {
-                          if (await pickAndUploadNote(context, e.id)) _reload();
-                        },
-                ),
+            for (final month in byMonth.entries) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+                child: Row(children: [
+                  Text(fmtMonthYear(month.key), style: t.textTheme.titleSmall),
+                  const Spacer(),
+                  Text('${fmtHours(month.value.fold<int>(0, (a, e) => a + e.minutes))} h',
+                      style: t.textTheme.labelLarge?.copyWith(color: t.colorScheme.primary)),
+                ]),
               ),
+              Card(
+                child: Column(children: [
+                  for (final (i, e) in month.value.indexed) ...[
+                    if (i > 0) const Divider(height: 1, indent: 64),
+                    _entry(context, e, withNotes.contains(e.id), locked),
+                  ],
+                ]),
+              ),
+            ],
             if (!locked && entries.isNotEmpty && r != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () => _submit(r, withoutNotes),
                 icon: const Icon(Icons.send),
@@ -154,8 +216,9 @@ class _HoursPageState extends State<HoursPage> {
               ),
               const SizedBox(height: 6),
               Text('Due ${fmtDateY(d.semester!.reportDeadline)}. Late reports are paid at the end of next semester.',
-                  textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+                  textAlign: TextAlign.center, style: t.textTheme.bodySmall),
             ],
+            const SizedBox(height: 72),
           ]),
           if (!locked)
             Positioned(
@@ -172,6 +235,83 @@ class _HoursPageState extends State<HoursPage> {
         ]);
       },
     );
+  }
+}
+
+/// Icon and colour for each kind of activity
+(IconData, Color) activityLook(String a) => switch (a) {
+      'council_meeting' => (Icons.account_balance_outlined, Colors.indigo),
+      'siec_meeting' => (Icons.groups_outlined, Colors.purple),
+      'preparation' => (Icons.menu_book_outlined, Colors.teal),
+      'student_input' => (Icons.record_voice_over_outlined, Colors.orange.shade800),
+      'class_visit' => (Icons.co_present_outlined, Colors.blue),
+      'teams_email' => (Icons.mail_outline, Colors.cyan.shade700),
+      'materials' => (Icons.slideshow_outlined, Colors.pink),
+      'task' => (Icons.assignment_outlined, Colors.brown),
+      _ => (Icons.more_horiz, Colors.blueGrey),
+    };
+
+/// Draft → Submitted → Approved → Paid, with "Returned" shown on the second step.
+class ReportSteps extends StatelessWidget {
+  final String status;
+  const ReportSteps({super.key, required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final returned = status == 'returned';
+    final at = switch (status) { 'submitted' || 'returned' => 1, 'approved' => 2, 'paid' => 3, _ => 0 };
+    final steps = ['Draft', returned ? 'Returned' : 'Submitted', 'Approved', 'Paid'];
+    Widget dot(int i) {
+      final done = i < at || (i == at && i == 3);
+      final current = i == at && !done;
+      final color = returned && i == 1 ? Colors.orange.shade800 : t.colorScheme.primary;
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: done || current ? color : t.colorScheme.surfaceContainerHighest,
+          border: current ? Border.all(color: color.withValues(alpha: 0.35), width: 4) : null,
+        ),
+        child: Icon(
+          done ? Icons.check : (returned && i == 1 ? Icons.undo : Icons.circle),
+          size: done || (returned && i == 1) ? 16 : 7,
+          color: done || current ? Colors.white : t.colorScheme.outline,
+        ),
+      );
+    }
+
+    return Column(children: [
+      Row(children: [
+        for (var i = 0; i < 4; i++) ...[
+          dot(i),
+          if (i < 3)
+            Expanded(
+              child: Container(
+                height: 3,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: i < at ? t.colorScheme.primary : t.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+        ],
+      ]),
+      const SizedBox(height: 6),
+      Row(children: [
+        for (var i = 0; i < 4; i++)
+          Expanded(
+            child: Text(steps[i],
+                textAlign: i == 0 ? TextAlign.start : (i == 3 ? TextAlign.end : TextAlign.center),
+                style: t.textTheme.labelSmall?.copyWith(
+                    fontWeight: i == at ? FontWeight.bold : null,
+                    color: returned && i == 1 ? Colors.orange.shade800 : null)),
+          ),
+      ]),
+    ]);
   }
 }
 

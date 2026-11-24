@@ -202,7 +202,7 @@ class Repo {
 
   // ---------- meetings ----------
   static Future<List<Meeting>> meetings() async =>
-      _list(await sb.from('meetings').select().order('starts_at'), Meeting.fromMap);
+      _list(await sb.from('meetings').select().order('starts_at', ascending: true), Meeting.fromMap); // oldest first
 
   static Future<void> createMeeting(
           {required String councilId, required String title, required DateTime startsAt, String? location}) =>
@@ -565,6 +565,22 @@ class Repo {
   }
 
   /// Marks every message from the Head of Education in the channel as seen.
+  /// Per channel: latest post text, when, who, and how many posts from the Head of Education I have not seen
+  static Future<Map<String, ({String? body, DateTime? at, String? author, int unread})>> channelOverview() async {
+    final rows = await sb.rpc('channel_overview') as List;
+    return {
+      for (final r in rows)
+        r['channel_id'] as String: (
+          body: ((r['last_body'] as String?)?.trim().isNotEmpty ?? false)
+              ? r['last_body'] as String
+              : (r['last_file'] == null ? null : '📎 ${r['last_file']}'),
+          at: r['last_at'] == null ? null : DateTime.parse(r['last_at'] as String).toLocal(),
+          author: r['last_author'] as String?,
+          unread: (r['unread'] as num?)?.toInt() ?? 0,
+        )
+    };
+  }
+
   static Future<void> markChannelRead(String channelId) =>
       sb.rpc('mark_channel_read', params: {'p_channel': channelId});
 

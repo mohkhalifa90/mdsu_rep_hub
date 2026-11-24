@@ -20,65 +20,129 @@ class MorePage extends StatelessWidget {
   void _push(BuildContext context, String title, Widget body) => Navigator.push(
       context, MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(title)), body: body)));
 
-  @override
-  Widget build(BuildContext context) => ListView(children: [
-        ListTile(
-          leading: const Icon(Icons.campaign_outlined),
-          title: const Text('From the Head of Education'),
-          subtitle: const Text('News, instructions and final agendas'),
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => PostsPage(councils: data.councils, standalone: true))),
+  Widget _item(BuildContext context, IconData icon, Color color, String title, String? sub, VoidCallback onTap) =>
+      ListTile(
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+          child: Icon(icon, color: color, size: 21),
         ),
-        ListTile(
-          leading: const Icon(Icons.loop),
-          title: const Text('Follow-ups'),
-          subtitle: const Text('Issues raised in your councils and the university\'s answers'),
-          onTap: () => _push(context, 'Follow-ups', RepFollowUpsPage(data: data)),
-        ),
-        ListTile(
-          leading: const Icon(Icons.school_outlined),
-          title: const Text('Tutoring board'),
-          subtitle: const Text('Students helping students'),
-          onTap: () => _push(context, 'Tutoring board', TutoringBoard(me: data.me)),
-        ),
-        ListTile(
-          leading: const Icon(Icons.people_outline),
-          title: const Text('Rep directory'),
-          onTap: () => _push(context, 'Rep directory', const DirectoryPage()),
-        ),
-        ListTile(
-          leading: const Icon(Icons.person_outline),
-          title: const Text('My profile & payment details'),
-          onTap: () => _push(context, 'My profile', ProfilePage(data: data, onChanged: onChanged)),
-        ),
-        ListTile(
-          leading: const Icon(Icons.tips_and_updates_outlined),
-          title: const Text('Show the welcome tour'),
-          onTap: () => showTour(context, repTour, markSeen: false),
-        ),
-        ListTile(
-          leading: const Icon(Icons.palette_outlined),
-          title: const Text('Appearance'),
-          subtitle: const Text('Light or dark, colour and banner'),
-          onTap: () => showAppearanceSheet(context),
-        ),
-        ListTile(
-          leading: const Icon(Icons.menu_book_outlined),
-          title: const Text('Handbook – quick facts'),
-          onTap: () => _push(context, 'Handbook', const HandbookPage()),
-        ),
-        if ((data.me.studyYear ?? 1) > 1)
-          Card(
-            margin: const EdgeInsets.all(16),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text('Succession: as a year ${data.me.studyYear} rep, help find a rep for '
-                  'year ${data.me.studyYear! - 1} before you move on.'),
-            ),
+        title: Text(title),
+        subtitle: sub == null ? null : Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      );
+
+  Widget _group(BuildContext context, String title, List<Widget> items) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 18, 8, 6),
+            child: Text(title.toUpperCase(),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    letterSpacing: 0.8, color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ),
-        const Divider(),
-        ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out'), onTap: Repo.signOut),
-      ]);
+          Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: Column(children: [
+              for (final (i, w) in items.indexed) ...[
+                if (i > 0) const Divider(height: 1, indent: 64),
+                w,
+              ],
+            ]),
+          ),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final me = data.me;
+    final councils = data.myCouncils.map((c) => c.name).toList();
+    return CenteredList(maxWidth: 640, children: [
+      // ---- who I am ----
+      Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _push(context, 'My profile', ProfilePage(data: data, onChanged: onChanged)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              UserAvatar(id: me.id, name: me.fullName, radius: 30),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(me.fullName.isEmpty ? 'Your profile' : me.fullName, style: t.textTheme.titleMedium),
+                  Text([
+                    if ((me.program ?? '').isNotEmpty) me.program!,
+                    if (me.studyYear != null) 'year ${me.studyYear}',
+                  ].join(' · '), style: t.textTheme.bodySmall),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    StatusChip(me.isMember ? 'Union member' : 'Not a member',
+                        me.isMember ? Colors.green.shade700 : Colors.red.shade700),
+                    StatusChip(me.quizPassed ? 'Quiz passed' : 'Quiz not passed',
+                        me.quizPassed ? Colors.green.shade700 : Colors.orange.shade800),
+                  ]),
+                ]),
+              ),
+              const Icon(Icons.chevron_right),
+            ]),
+          ),
+        ),
+      ),
+      if (councils.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
+          child: Text('Your councils: ${councils.join(' · ')}', style: t.textTheme.bodySmall),
+        ),
+      _group(context, 'Work', [
+        _item(context, Icons.campaign_outlined, Colors.indigo, 'From the Head of Education',
+            'News, instructions and final agendas', () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => PostsPage(councils: data.councils, standalone: true)))),
+        _item(context, Icons.loop, Colors.deepOrange, 'Follow-ups', 'Issues raised and the university\'s answers',
+            () => _push(context, 'Follow-ups', RepFollowUpsPage(data: data))),
+        _item(context, Icons.menu_book_outlined, Colors.teal, 'Handbook – quick facts', null,
+            () => _push(context, 'Handbook', const HandbookPage())),
+      ]),
+      _group(context, 'Community', [
+        _item(context, Icons.school_outlined, Colors.green.shade700, 'Tutoring board', 'Students helping students',
+            () => _push(context, 'Tutoring board', TutoringBoard(me: data.me))),
+        _item(context, Icons.people_outline, Colors.blue, 'Rep directory', 'Reps who shared their contact details',
+            () => _push(context, 'Rep directory', const DirectoryPage())),
+      ]),
+      _group(context, 'You', [
+        _item(context, Icons.person_outline, Colors.purple, 'My profile & payment details', null,
+            () => _push(context, 'My profile', ProfilePage(data: data, onChanged: onChanged))),
+        _item(context, Icons.palette_outlined, Colors.pink, 'Appearance', 'Photo, light or dark, colour and banner',
+            () => showAppearanceSheet(context)),
+        _item(context, Icons.tips_and_updates_outlined, Colors.amber.shade800, 'Show the welcome tour', null,
+            () => showTour(context, repTour, markSeen: false)),
+      ]),
+      if ((me.studyYear ?? 1) > 1)
+        Card(
+          margin: const EdgeInsets.only(top: 16),
+          color: Color.alphaBlend(softBg(context, Colors.blue), t.cardColor),
+          child: ListTile(
+            leading: const Icon(Icons.handshake_outlined),
+            title: const Text('Succession'),
+            subtitle: Text('As a year ${me.studyYear} rep, help find a rep for year ${me.studyYear! - 1} before you move on.'),
+          ),
+        ),
+      const SizedBox(height: 16),
+      Center(
+        child: TextButton.icon(
+          onPressed: Repo.signOut,
+          icon: const Icon(Icons.logout),
+          label: const Text('Sign out'),
+          style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+        ),
+      ),
+    ]);
+  }
 }
 
 class RepFollowUpsPage extends StatefulWidget {

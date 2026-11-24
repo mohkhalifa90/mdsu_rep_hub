@@ -6,6 +6,7 @@ import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/attendance_picker.dart';
 import '../shared/widgets.dart';
+import 'hours_page.dart';
 import 'rep_shell.dart';
 
 /// Meetings: reps say how they attend and send topics before each meeting, and can look
@@ -21,6 +22,7 @@ class RepAgendaPage extends StatefulWidget {
 class _RepAgendaPageState extends State<RepAgendaPage> {
   late Future<_AgendaData> _f = _load();
   String? _open;
+  bool _showPast = false;
 
   @override
   void initState() {
@@ -39,12 +41,15 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
 
   Future<_AgendaData> _load() async {
     final all = await Repo.meetings();
+    final sem = widget.data.semester;
+    final entries = sem == null ? <TimeEntry>[] : await Repo.entries(userId: widget.data.me.id, semesterId: sem.id);
     return _AgendaData(
       all.where((m) => !m.isPast).toList(),
       all.where((m) => m.isPast).toList().reversed.toList(),
       await Repo.agendaItems(),
       await Repo.myAttendance(),
       await Repo.myNoInput(),
+      entries.map((e) => e.meetingId).whereType<String>().toSet(),
     );
   }
 
@@ -78,52 +83,208 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
             onChanged: _reload,
           );
         }
-        return ListView(padding: const EdgeInsets.all(16), children: [
+        return CenteredList(children: [
+          Text('Say how you will attend and send your topics before each meeting.',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
           if (d.upcoming.isEmpty)
             const EmptyState(
                 'No upcoming meetings in your councils. When the Head of Education adds one, you get a notification.',
                 icon: Icons.event_available_outlined),
-          Text('Send topics before each meeting and say how you will attend. Ask your classmates as early as you can.',
-              style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 8),
-          for (final m in d.upcoming)
-            Card(
-              child: ListTile(
-                title: Text(m.title),
-                subtitle: Text('${fmtDateTime(m.startsAt)} · send by ${fmtDate(m.inputDeadline)}\n'
-                    '${widget.data.council(m.councilId)?.name ?? ''}'),
-                isThreeLine: true,
-                trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Builder(builder: (_) {
-                    final n = d.items.where((a) => a.meetingId == m.id).length;
-                    if (n > 0) return StatusChip('$n sent', Colors.green.shade700);
-                    if (d.noInput.contains(m.id)) return StatusChip('No topics', Colors.blueGrey);
-                    return StatusChip('Topics?', Colors.orange.shade800);
-                  }),
-                  const SizedBox(height: 4),
-                  d.attendance[m.id] == null
-                      ? StatusChip('Attending?', Colors.orange.shade800)
-                      : StatusChip(attendanceLabels[d.attendance[m.id]] ?? '', Colors.blueGrey),
-                ]),
-                onTap: () => setState(() => _open = m.id),
-              ),
+          for (final (i, m) in d.upcoming.indexed)
+            _UpcomingCard(
+              meeting: m,
+              next: i == 0,
+              council: widget.data.council(m.councilId)?.name ?? '',
+              topics: d.items.where((a) => a.meetingId == m.id).length,
+              noInput: d.noInput.contains(m.id),
+              attendance: d.attendance[m.id],
+              onOpen: () => setState(() => _open = m.id),
+              onAttend: (mode) async {
+                final before = d.attendance[m.id];
+                void put(String? v) {
+                  if (v == null) {
+                    d.attendance.remove(m.id);
+                  } else {
+                    d.attendance[m.id] = v;
+                  }
+                }
+
+                setState(() => put(mode));
+                final ok = await runAction(context, () => Repo.setAttendance(m.id, mode),
+                    success: mode == null ? null : 'Saved: ${attendanceLabels[mode]}');
+                if (!ok && mounted) {
+                  setState(() => put(before));
+                }
+              },
             ),
           if (d.past.isNotEmpty) ...[
-            const SectionTitle('Earlier meetings'),
-            for (final m in d.past)
-              Card(
-                child: ListTile(
-                  title: Text(m.title),
-                  subtitle: Text('${fmtDateY(m.startsAt)} · ${widget.data.council(m.councilId)?.name ?? ''}'),
-                  trailing: StatusChip(
-                      d.attendance[m.id] == null ? 'No answer' : (attendanceLabels[d.attendance[m.id]] ?? ''),
-                      Colors.blueGrey),
-                  onTap: () => setState(() => _open = m.id),
-                ),
+            const SizedBox(height: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => _showPast = !_showPast),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(children: [
+                  Text('Earlier meetings (${d.past.length})', style: Theme.of(context).textTheme.titleMedium),
+                  const Spacer(),
+                  AnimatedRotation(
+                    turns: _showPast ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.expand_more),
+                  ),
+                ]),
               ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: !_showPast
+                  ? const SizedBox(width: double.infinity)
+                  : Column(children: [
+                      for (final m in d.past)
+                        _PastTile(
+                          meeting: m,
+                          council: widget.data.council(m.councilId)?.name ?? '',
+                          attendance: d.attendance[m.id],
+                          logged: d.logged.contains(m.id),
+                          onOpen: () => setState(() => _open = m.id),
+                          onLog: () async {
+                            if (await showLogTimeSheet(context, widget.data, meetingId: m.id)) _reload();
+                          },
+                        ),
+                    ]),
+            ),
           ],
         ]);
       },
+    );
+  }
+}
+
+/// An upcoming meeting: date, attendance buttons and where your topics stand.
+class _UpcomingCard extends StatelessWidget {
+  final Meeting meeting;
+  final bool next;
+  final String council;
+  final int topics;
+  final bool noInput;
+  final String? attendance;
+  final VoidCallback onOpen;
+  final ValueChanged<String?> onAttend;
+  const _UpcomingCard(
+      {required this.meeting,
+      required this.next,
+      required this.council,
+      required this.topics,
+      required this.noInput,
+      required this.attendance,
+      required this.onOpen,
+      required this.onAttend});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final m = meeting;
+    final deadlinePassed = daysUntilDate(m.inputDeadline) < 0;
+    final (IconData icon, Color color, String text, String action) = topics > 0
+        ? (Icons.check_circle, Colors.green.shade700, '$topics topic${topics == 1 ? '' : 's'} sent', 'Add more')
+        : noInput
+            ? (Icons.check_circle_outline, Colors.blueGrey, 'No topics this time', 'Change')
+            : deadlinePassed
+                ? (Icons.schedule, Colors.grey, 'Topic deadline passed (${fmtDate(m.inputDeadline)})', 'Open')
+                : (Icons.record_voice_over_outlined, Colors.orange.shade800,
+                    'Send your topics by ${fmtDate(m.inputDeadline)}', 'Add topics');
+    final sameName = m.title.trim().toLowerCase() == council.trim().toLowerCase();
+    return Card(
+      shape: next
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.colorScheme.primary, width: 1.5))
+          : null,
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          InkWell(
+            onTap: onOpen,
+            borderRadius: BorderRadius.circular(10),
+            child: Row(children: [
+              DateTile(m.startsAt),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    '${next ? 'NEXT · ' : ''}${relativeDay(m.startsAt).toUpperCase()} · ${fmtTime(m.startsAt)}',
+                    style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.primary, letterSpacing: 0.6),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(m.title, style: t.textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  if (!sameName && council.isNotEmpty) Text(council, style: t.textTheme.bodySmall),
+                  if (m.location != null && m.location!.isNotEmpty)
+                    Row(children: [
+                      Icon(Icons.place_outlined, size: 14, color: t.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 3),
+                      Flexible(child: Text(m.location!, style: t.textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
+                    ]),
+                ]),
+              ),
+              const Icon(Icons.chevron_right),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          Text(attendance == null ? 'Will you attend?' : 'You attend', style: t.textTheme.labelMedium),
+          const SizedBox(height: 6),
+          SizedBox(width: double.infinity, child: AttendancePicker(value: attendance, onChanged: onAttend)),
+          const SizedBox(height: 6),
+          Row(children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
+            TextButton(onPressed: onOpen, child: Text(action)),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+/// An earlier meeting in the folded list.
+class _PastTile extends StatelessWidget {
+  final Meeting meeting;
+  final String council;
+  final String? attendance;
+  final bool logged;
+  final VoidCallback onOpen;
+  final VoidCallback onLog;
+  const _PastTile(
+      {required this.meeting,
+      required this.council,
+      required this.attendance,
+      required this.logged,
+      required this.onOpen,
+      required this.onLog});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = meeting;
+    final attended = attendance == 'offline' || attendance == 'online';
+    final Widget trailing = attended
+        ? (logged
+            ? StatusChip('Time logged', Colors.green.shade700)
+            : FilledButton.tonal(onPressed: onLog, child: const Text('Log time')))
+        : attendance == 'absent'
+            ? StatusChip('Didn\'t attend', Colors.grey)
+            : const SizedBox.shrink();
+    final sameName = m.title.trim().toLowerCase() == council.trim().toLowerCase();
+    return Card(
+      child: ListTile(
+        leading: DateTile(m.startsAt, muted: true, width: 44),
+        title: Text(m.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text('${fmtDateY(m.startsAt)}${sameName ? '' : ' · $council'}'),
+        trailing: trailing,
+        onTap: onOpen,
+      ),
     );
   }
 }
@@ -181,7 +342,8 @@ class _AgendaData {
   final List<AgendaItem> items;
   final Map<String, String> attendance;
   final Set<String> noInput;
-  _AgendaData(this.upcoming, this.past, this.items, this.attendance, this.noInput);
+  final Set<String> logged; // meetings I logged time for
+  _AgendaData(this.upcoming, this.past, this.items, this.attendance, this.noInput, this.logged);
 }
 
 class _MeetingInput extends StatefulWidget {

@@ -285,7 +285,7 @@ class _RepHomePageState extends State<RepHomePage> {
           final next = upcoming.isEmpty ? null : upcoming.first;
 
           final first = widget.data.me.fullName.trim().split(' ').first;
-          return ListView(padding: const EdgeInsets.all(16), children: [
+          return CenteredList(children: [
             BannerHeader(
               height: 110,
               title: first.isEmpty ? 'Hi!' : 'Hi, $first',

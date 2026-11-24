@@ -44,14 +44,43 @@ class ChannelsPage extends StatefulWidget {
   State<ChannelsPage> createState() => _ChannelsPageState();
 }
 
+/// "now", "5m", "3h", "2d", or a date
+String _ago(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return 'now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m';
+  if (d.inHours < 24) return '${d.inHours}h';
+  if (d.inDays < 7) return '${d.inDays}d';
+  return fmtDate(t);
+}
+
 class _ChannelsPageState extends State<ChannelsPage> {
   late Future<(List<Channel>, Map<String, String>)> _f = _load();
   Channel? _selected;
 
   Future<(List<Channel>, Map<String, String>)> _load() async => (await Repo.channels(), await Repo.memberNames());
   bool _linkDone = false;
+  Map<String, ({String? body, DateTime? at, String? author, int unread})> _ov = {};
 
-  void _push(Channel c, Map<String, String> names, {String? focus}) => Navigator.push(
+  @override
+  void initState() {
+    super.initState();
+    _loadOverview();
+  }
+
+  Future<void> _loadOverview() async {
+    try {
+      final ov = await Repo.channelOverview();
+      if (mounted) setState(() => _ov = ov);
+    } catch (_) {/* the list works without it */}
+  }
+
+  Future<void> _push(Channel c, Map<String, String> names, {String? focus}) async {
+    await _pushRoute(c, names, focus: focus);
+    _loadOverview(); // the channel is read now
+  }
+
+  Future<void> _pushRoute(Channel c, Map<String, String> names, {String? focus}) => Navigator.push(
       context,
       MaterialPageRoute(
           builder: (_) => Scaffold(
@@ -196,12 +225,40 @@ class _ChannelsPageState extends State<ChannelsPage> {
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       onPressed: () => _editChannel(channel: c))
                   : null,
-              title: Text(c.name),
-              subtitle: Text(c.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Row(children: [
+                Expanded(
+                  child: Text(c.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: (_ov[c.id]?.unread ?? 0) > 0 ? const TextStyle(fontWeight: FontWeight.bold) : null),
+                ),
+                if (_ov[c.id]?.at != null)
+                  Text(_ago(_ov[c.id]!.at!), style: Theme.of(context).textTheme.labelSmall),
+              ]),
+              subtitle: Row(children: [
+                Expanded(
+                  child: Text(
+                    _ov[c.id]?.body == null
+                        ? c.description
+                        : '${names[_ov[c.id]!.author]?.split(' ').first ?? ''}: ${_ov[c.id]!.body!.replaceAll('\n', ' ')}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if ((_ov[c.id]?.unread ?? 0) > 0)
+                  Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                    decoration: BoxDecoration(color: channelColor(c), borderRadius: BorderRadius.circular(10)),
+                    child: Text('${_ov[c.id]!.unread}',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+              ]),
               selected: widget.wide && _selected?.id == c.id,
               onTap: () {
                 if (widget.wide) {
                   setState(() => _selected = c);
+                  Future.delayed(const Duration(seconds: 2), _loadOverview);
                 } else {
                   _push(c, names);
                 }

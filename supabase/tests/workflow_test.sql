@@ -571,6 +571,10 @@ insert into t select '25c weekly summary has this and last week',
   (select jsonb_array_length(s->'reports') = 2 and (s->'comments'->>0)::int >= 1 and s ? 'answered' and s ? 'new_reps'
    from (select public.weekly_summary() s) x);
 
+select from pg_temp.as_user('Ahmed Saleh');
+insert into t select '25d channel overview has a latest post and unread count',
+  (select count(*) > 0 and bool_and(unread >= 0) from public.channel_overview() where last_at is not null);
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;
