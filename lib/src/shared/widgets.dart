@@ -444,23 +444,19 @@ Future<void> showResetPasswordDialog(BuildContext context,
     {required String userId, required String name, String? email}) async {
   final pw = TextEditingController(text: generateTempPassword());
   String? error;
-  bool done = false, busy = false;
+  bool busy = false;
   await showDialog<void>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setD) => AlertDialog(
-        title: Text(done ? 'Password reset ✓' : 'Reset password for $name'),
+        title: Text('Reset password for $name'),
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(done
-                ? 'Give $name this temporary password (in person, by phone or Teams). '
-                    'They should change it under More → My profile.'
-                : 'Check that you are talking to $name before you reset the password.'),
+            Text('Check that you are talking to $name before you reset the password.'),
             const SizedBox(height: 12),
             TextField(
               controller: pw,
-              readOnly: done,
               decoration: InputDecoration(
                 labelText: 'Temporary password',
                 suffixIcon: IconButton(
@@ -477,9 +473,7 @@ Future<void> showResetPasswordDialog(BuildContext context,
               ),
           ]),
         ),
-        actions: done
-            ? [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done'))]
-            : [
+        actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 FilledButton(
                   onPressed: busy

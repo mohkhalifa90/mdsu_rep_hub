@@ -159,6 +159,23 @@ class Meeting {
   DateTime get inputDeadline => _inputDeadline ?? startsAt.subtract(const Duration(days: 2));
 }
 
+/// One meeting in the Head of Education's list
+class MeetingStats {
+  final int members, room, online, absent, topics, newTopics, foodMissing;
+  final bool agendaPosted;
+  MeetingStats.fromMap(Map<String, dynamic> m)
+      : members = _int(m['members']),
+        room = _int(m['room']),
+        online = _int(m['online']),
+        absent = _int(m['absent']),
+        topics = _int(m['topics']),
+        newTopics = _int(m['new_topics']),
+        foodMissing = _int(m['food_missing']),
+        agendaPosted = (m['agenda_posted'] ?? false) as bool;
+  int get answered => room + online + absent;
+  int get noAnswer => members > answered ? members - answered : 0;
+}
+
 /// A post from the Head of Education. With [meetingId] it is that meeting's final agenda.
 class Post {
   final String id;
@@ -172,6 +189,7 @@ class Post {
   final List<String> mentions;
   final DateTime? editedAt;
   final DateTime createdAt;
+  final bool pinned; // kept at the top
   Post.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         authorId = m['author_id'] as String?,
@@ -183,8 +201,10 @@ class Post {
         fileName = m['file_name'] as String?,
         mentions = ((m['mentions'] as List?) ?? const []).map((e) => '$e').toList(),
         editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
-        createdAt = _dt(m['created_at']);
+        createdAt = _dt(m['created_at']),
+        pinned = (m['pinned'] ?? false) as bool;
   bool get isFinalAgenda => meetingId != null;
+  bool get isImage => RegExp(r'\.(png|jpe?g|gif|webp)$', caseSensitive: false).hasMatch(fileName ?? filePath ?? '');
 }
 
 /// How a representative attends a meeting.

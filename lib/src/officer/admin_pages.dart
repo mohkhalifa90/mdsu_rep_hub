@@ -8,6 +8,7 @@ import '../data/roster.dart';
 import '../shared/avatars.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
+import '../shared/send_message.dart';
 import '../shared/theme.dart';
 import '../shared/tour.dart';
 import '../shared/widgets.dart';

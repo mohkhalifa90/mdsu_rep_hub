@@ -218,6 +218,12 @@ class Repo {
         'serves_food': servesFood,
       });
 
+  /// Head of Education: per meeting – members, answers, topics, food answers missing, agenda posted
+  static Future<Map<String, MeetingStats>> meetingOverview() async {
+    final rows = await sb.rpc('meeting_overview') as List;
+    return {for (final r in rows) r['meeting_id'] as String: MeetingStats.fromMap(r as Map<String, dynamic>)};
+  }
+
   /// Head of Education: is food served at this meeting (ask for food preferences)?
   static Future<void> setServesFood(String meetingId, bool on) =>
       sb.from('meetings').update({'serves_food': on}).eq('id', meetingId);
@@ -238,6 +244,27 @@ class Repo {
 
   static Future<List<Post>> posts({int limit = 50}) async => _list(
       await sb.from('posts').select().order('created_at', ascending: false).limit(limit), Post.fromMap);
+
+  static Future<void> setPinned(String postId, bool on) => sb.from('posts').update({'pinned': on}).eq('id', postId);
+
+  /// Representatives: these posts were on screen
+  static Future<void> markPostsSeen(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await sb.rpc('mark_posts_seen', params: {'p_posts': ids});
+  }
+
+  /// Head of Education: post id → (seen, readers)
+  static Future<Map<String, (int, int)>> postSeen() async {
+    final rows = await sb.rpc('post_seen') as List;
+    return {
+      for (final r in rows)
+        r['post_id'] as String: ((r['seen'] as num).toInt(), (r['audience'] as num).toInt()),
+    };
+  }
+
+  /// Head of Education: who has not seen a post yet (user ids)
+  static Future<List<String>> postNotSeen(String postId) async =>
+      [for (final r in await sb.rpc('post_not_seen', params: {'p_post': postId}) as List) r['user_id'] as String];
 
   /// Latest final agenda published for a meeting, if any
   static Future<Post?> finalAgenda(String meetingId) async {

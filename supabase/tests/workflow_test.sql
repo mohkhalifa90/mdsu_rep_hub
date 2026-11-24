@@ -633,6 +633,28 @@ insert into t select '27c profile card shows name, hides email unless shared',
   (select c->>'full_name' = 'Head of Education' and c ? 'councils' from (select public.profile_card(
      '00000000-0000-0000-0000-00000000000a') c) x);
 
+select from pg_temp.as_user('Head of Education');
+insert into t select '28 meeting overview: members, answers, food',
+  (select members >= 1 and room >= 1 and food_missing >= 0 from public.meeting_overview()
+    where meeting_id = '00000000-0000-0000-0000-0000000f00d1');
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  perform * from public.meeting_overview();
+  insert into t values ('28b reps cannot read the meeting overview', false);
+exception when others then insert into t values ('28b reps cannot read the meeting overview', true); end $$;
+
+select from pg_temp.as_user('Head of Education');
+insert into public.posts (id, title, body) values ('00000000-0000-0000-0000-0000000005e1', 'Seen test', 'hi');
+select from pg_temp.as_user('Ahmed Saleh');
+select public.mark_posts_seen(array['00000000-0000-0000-0000-0000000005e1']::uuid[]);
+select from pg_temp.as_user('Head of Education');
+insert into t select '28c post seen count and who has not seen',
+  (select seen = 1 and audience >= 2 from public.post_seen() where post_id = '00000000-0000-0000-0000-0000000005e1')
+  and not exists (select 1 from public.post_not_seen('00000000-0000-0000-0000-0000000005e1')
+                   where user_id = '00000000-0000-0000-0000-000000000003');
+update public.posts set pinned = true where id = '00000000-0000-0000-0000-0000000005e1';
+insert into t select '28d officer pins a post', (select pinned from public.posts where id = '00000000-0000-0000-0000-0000000005e1');
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

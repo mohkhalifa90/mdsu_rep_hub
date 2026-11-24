@@ -22,12 +22,21 @@ class AgendaBuilderPage extends StatefulWidget {
 }
 
 class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
-  late Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _f = _load();
+  late Future<(List<Meeting>, Map<String, String>, Map<String, MeetingStats>)> _f = _load();
   bool _deepLinkDone = false;
   bool _calendar = false; // list or month view
+  bool _showPast = false;
+  String? _councilFilter; // null = all councils
+  final _search = TextEditingController();
 
-  Future<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)> _load() async =>
-      (await Repo.meetings(), await Repo.memberNames(), await Repo.agendaItems(), await Repo.attendance());
+  Future<(List<Meeting>, Map<String, String>, Map<String, MeetingStats>)> _load() async =>
+      (await Repo.meetings(), await Repo.memberNames(), await Repo.meetingOverview());
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   void _reload() => setState(() => _f = _load());
 
@@ -52,42 +61,50 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
     if (mounted) _reload();
   }
 
-  Widget _tile(Meeting m, Map<String, String> names, List<AgendaItem> items, List<Attendance> att) {
-    final topics = items.where((a) => a.meetingId == m.id && a.status != 'declined').length;
-    final mine = att.where((a) => a.meetingId == m.id);
-    final room = mine.where((a) => a.mode == 'offline').length;
-    final online = mine.where((a) => a.mode == 'online').length;
-    final absent = mine.where((a) => a.mode == 'absent').length;
-    return Card(
-      child: ListTile(
-        title: Text('${m.title} · ${widget.data.council(m.councilId)?.name ?? ''}'),
-        subtitle: Text('${m.isPast ? fmtDateY(m.startsAt) : fmtDateTime(m.startsAt)}'
-            '${m.location == null || m.location!.isEmpty ? '' : ' · ${m.location}'}\n'
-            '$topics topics · $room in the room · $online online · $absent can\'t attend'),
-        isThreeLine: true,
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => _open(m, names),
-      ),
-    );
-  }
+  Widget _tile(Meeting m, Map<String, String> names, MeetingStats? st) => _MeetingCard(
+        meeting: m,
+        council: widget.data.council(m.councilId)?.name ?? '',
+        stats: st,
+        onOpen: () => _open(m, names),
+        onDuplicate: () => _addMeeting(null, m),
+        onRemind: () async {
+          try {
+            final n = await Repo.requestAgendaInput(m.id);
+            if (mounted) showSnack(context, 'Reminder sent to $n reps');
+            _reload();
+          } catch (e) {
+            if (mounted) showSnack(context, errorText(e));
+          }
+        },
+      );
 
-  Future<void> _addMeeting([DateTime? day]) async {
+  /// [day]: from the calendar. [like]: duplicate this meeting (same council, title, time, place) four weeks later.
+  Future<void> _addMeeting([DateTime? day, Meeting? like]) async {
     final d = widget.data;
     // SIEC first (most meetings), then A–Z
     final councils = [...d.councils]..sort((a, b) {
         if (a.isSiec != b.isSiec) return a.isSiec ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
-    String council = councils.first.id;
-    final title = TextEditingController(), loc = TextEditingController(text: 'Teams');
+    String council = like?.councilId ?? councils.first.id;
+    final title = TextEditingController(text: like?.title ?? ''),
+        loc = TextEditingController(text: like?.location ?? 'Teams');
     DateTime date = day ?? DateTime.now().add(const Duration(days: 21));
-    TimeOfDay time = const TimeOfDay(hour: 13, minute: 15);
-    bool food = true;
+    if (day == null && like != null) {
+      date = like.startsAt.add(const Duration(days: 28));
+      while (date.isBefore(DateTime.now())) {
+        date = date.add(const Duration(days: 28));
+      }
+    }
+    TimeOfDay time = like == null
+        ? const TimeOfDay(hour: 13, minute: 15)
+        : TimeOfDay(hour: like.startsAt.hour, minute: like.startsAt.minute);
+    bool food = like?.servesFood ?? true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('Add meeting'),
+          title: Text(like == null ? 'Add meeting' : 'Duplicate meeting'),
           content: SizedBox(
             width: 440,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -164,13 +181,22 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Loader<(List<Meeting>, Map<String, String>, List<AgendaItem>, List<Attendance>)>(
+    return Loader<(List<Meeting>, Map<String, String>, Map<String, MeetingStats>)>(
       future: _f,
       onRetry: _reload,
       builder: (context, data) {
-        final (meetings, names, items, att) = data;
+        final (all, names, stats) = data;
+        final q = _search.text.trim().toLowerCase();
+        final meetings = all.where((m) {
+          if (_councilFilter != null && m.councilId != _councilFilter) return false;
+          if (q.isEmpty) return true;
+          final c = widget.data.council(m.councilId)?.name.toLowerCase() ?? '';
+          return m.title.toLowerCase().contains(q) || c.contains(q) || (m.location ?? '').toLowerCase().contains(q);
+        }).toList();
         final upcoming = meetings.where((m) => !m.isPast).toList();
         final past = meetings.where((m) => m.isPast).toList().reversed.toList();
+        final usedCouncils = {for (final m in all) m.councilId}.toList()
+          ..sort((a, b) => (widget.data.council(a)?.name ?? '').compareTo(widget.data.council(b)?.name ?? ''));
         if (!_deepLinkDone && widget.openMeetingId != null) {
           _deepLinkDone = true;
           final hit = meetings.where((m) => m.id == widget.openMeetingId).toList();
@@ -197,9 +223,8 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               FilledButton.icon(onPressed: _addMeeting, icon: const Icon(Icons.add), label: const Text('Add meeting')),
             ],
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: SegmentedButton<bool>(
+          Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(value: false, icon: Icon(Icons.view_list_outlined), label: Text('List')),
                 ButtonSegment(value: true, icon: Icon(Icons.calendar_month_outlined), label: Text('Month')),
@@ -207,7 +232,43 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               selected: {_calendar},
               onSelectionChanged: (v) => setState(() => _calendar = v.first),
             ),
-          ),
+            SizedBox(
+              width: 260,
+              child: DropdownButtonFormField<String?>(
+                initialValue: _councilFilter,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.filter_list), labelText: 'Council', isDense: true),
+                items: [
+                  const DropdownMenuItem<String?>(value: null, child: Text('All councils')),
+                  for (final id in usedCouncils)
+                    DropdownMenuItem<String?>(
+                        value: id,
+                        child: Text(widget.data.council(id)?.name ?? '', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setState(() => _councilFilter = v),
+              ),
+            ),
+            SizedBox(
+              width: 240,
+              child: TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Search meetings',
+                  suffixIcon: _search.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => setState(() => _search.clear()),
+                        ),
+                ),
+              ),
+            ),
+          ]),
           const SizedBox(height: 12),
           if (_calendar)
             Card(
@@ -222,14 +283,33 @@ class _AgendaBuilderPageState extends State<AgendaBuilderPage> {
               ),
             )
           else ...[
-          const SectionTitle('Upcoming'),
-          if (upcoming.isEmpty)
-            EmptyState('No upcoming meetings. Add one – its council gets a notification.',
-                icon: Icons.event_outlined, actionLabel: 'Add meeting', onAction: _addMeeting),
-          for (final m in upcoming) _tile(m, names, items, att),
-          SectionTitle('Earlier meetings (${past.length})'),
-          if (past.isEmpty) const EmptyState('No earlier meetings'),
-          for (final m in past) _tile(m, names, items, att),
+            SectionTitle('Upcoming (${upcoming.length})'),
+            if (upcoming.isEmpty)
+              q.isNotEmpty || _councilFilter != null
+                  ? const EmptyState('No upcoming meetings match', icon: Icons.search_off)
+                  : EmptyState('No upcoming meetings. Add one – its council gets a notification.',
+                      icon: Icons.event_outlined, actionLabel: 'Add meeting', onAction: _addMeeting),
+            for (final m in upcoming) _tile(m, names, stats[m.id]),
+            if (past.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => setState(() => _showPast = !_showPast),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  child: Row(children: [
+                    Text('Earlier meetings (${past.length})', style: Theme.of(context).textTheme.titleMedium),
+                    const Spacer(),
+                    AnimatedRotation(
+                      turns: _showPast ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.expand_more),
+                    ),
+                  ]),
+                ),
+              ),
+              if (_showPast) for (final m in past) _tile(m, names, stats[m.id]),
+            ],
           ],
         ]);
       },
@@ -629,6 +709,152 @@ class _MeetingAgendaState extends State<_MeetingAgenda> {
             ),
         ]);
       },
+    );
+  }
+}
+
+
+/// One meeting in the Head of Education's list: date, answers bar, what still needs doing, quick actions.
+class _MeetingCard extends StatelessWidget {
+  final Meeting meeting;
+  final String council;
+  final MeetingStats? stats;
+  final VoidCallback onOpen, onDuplicate, onRemind;
+  const _MeetingCard(
+      {required this.meeting,
+      required this.council,
+      required this.stats,
+      required this.onOpen,
+      required this.onDuplicate,
+      required this.onRemind});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final m = meeting;
+    final st = stats;
+    final past = m.isPast;
+    final sameName = m.title.trim().toLowerCase() == council.trim().toLowerCase();
+    final soon = !past && daysUntilDate(m.startsAt) <= 7;
+
+    // what still needs doing
+    final todo = <Widget>[
+      if (st != null && st.newTopics > 0)
+        StatusChip('${st.newTopics} new topic${st.newTopics == 1 ? '' : 's'}', Colors.orange.shade800),
+      if (st != null && !past && m.servesFood && st.foodMissing > 0)
+        StatusChip('🍽 ${st.foodMissing} food not answered', Colors.orange.shade800),
+      if (st != null && !past && st.agendaPosted) StatusChip('Agenda posted ✓', Colors.green.shade700),
+      if (st != null && soon && !st.agendaPosted) StatusChip('Agenda not posted', Colors.red.shade700),
+      if (!past && !m.inputRequested && !soon) StatusChip('Reps not asked for topics', Colors.blueGrey),
+    ];
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            DateTile(m.startsAt, muted: past),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  past
+                      ? fmtDateY(m.startsAt).toUpperCase()
+                      : '${relativeDay(m.startsAt).toUpperCase()} · ${fmtTime(m.startsAt)}',
+                  style: t.textTheme.labelSmall?.copyWith(
+                      color: past ? t.colorScheme.onSurfaceVariant : t.colorScheme.primary, letterSpacing: 0.6),
+                ),
+                const SizedBox(height: 2),
+                Text(m.title, style: t.textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  [if (!sameName) council, if ((m.location ?? '').isNotEmpty) m.location!].join(' · '),
+                  style: t.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (st != null) ...[
+                  const SizedBox(height: 10),
+                  _AnswersBar(stats: st),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 12, runSpacing: 4, children: [
+                    _legend(context, Colors.green.shade600, '${st.room} in the room'),
+                    _legend(context, Colors.blue.shade600, '${st.online} online'),
+                    _legend(context, Colors.grey.shade500, '${st.absent} can\'t'),
+                    if (!past) _legend(context, t.colorScheme.outlineVariant, '${st.noAnswer} no answer'),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.record_voice_over_outlined, size: 14, color: t.colorScheme.onSurfaceVariant),
+                      Text(' ${st.topics} topic${st.topics == 1 ? '' : 's'}', style: t.textTheme.labelSmall),
+                    ]),
+                  ]),
+                ],
+                if (todo.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 6, runSpacing: 6, children: todo),
+                ],
+              ]),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (v) {
+                if (v == 'open') {
+                  onOpen();
+                } else if (v == 'remind') {
+                  onRemind();
+                } else {
+                  onDuplicate();
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'open', child: ListTile(leading: Icon(Icons.open_in_new), title: Text('Open'))),
+                if (!past)
+                  PopupMenuItem(
+                      value: 'remind',
+                      child: ListTile(
+                          leading: const Icon(Icons.campaign_outlined),
+                          title: Text(m.inputRequested ? 'Remind reps again' : 'Ask reps for topics'))),
+                const PopupMenuItem(
+                    value: 'duplicate',
+                    child: ListTile(leading: Icon(Icons.copy_all_outlined), title: Text('Duplicate (4 weeks later)'))),
+              ],
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _legend(BuildContext context, Color c, String text) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(text, style: Theme.of(context).textTheme.labelSmall),
+      ]);
+}
+
+/// Room / online / can't / no answer as one coloured bar
+class _AnswersBar extends StatelessWidget {
+  final MeetingStats stats;
+  const _AnswersBar({required this.stats});
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final parts = [
+      (stats.room, Colors.green.shade600),
+      (stats.online, Colors.blue.shade600),
+      (stats.absent, Colors.grey.shade500),
+      (stats.noAnswer, t.colorScheme.surfaceContainerHighest),
+    ].where((p) => p.$1 > 0).toList();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: SizedBox(
+        height: 8,
+        child: parts.isEmpty
+            ? Container(color: t.colorScheme.surfaceContainerHighest)
+            : Row(children: [
+                for (final (n, c) in parts) Expanded(flex: n, child: Container(color: c)),
+              ]),
+      ),
     );
   }
 }
