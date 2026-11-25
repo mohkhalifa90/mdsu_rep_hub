@@ -249,7 +249,7 @@ class _UpcomingCard extends StatelessWidget {
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
             child: attendance == 'offline' && m.servesFood
-                ? FoodPicker(key: ValueKey('${m.id}-$foodKey'), meetingId: m.id)
+                ? FoodPicker(key: ValueKey('${m.id}-$foodKey'), meetingId: m.id, deadline: m.inputDeadline)
                 : const SizedBox(width: double.infinity),
           ),
           const SizedBox(height: 6),
@@ -464,7 +464,7 @@ class _MeetingInputState extends State<_MeetingInput> {
         curve: Curves.easeOutCubic,
         alignment: Alignment.topCenter,
         child: _attendance == 'offline' && m.servesFood
-            ? FoodPicker(key: ValueKey('${m.id}-$_foodRev'), meetingId: m.id, locked: m.isPast)
+            ? FoodPicker(key: ValueKey('${m.id}-$_foodRev'), meetingId: m.id, deadline: m.inputDeadline, locked: m.isPast)
             : const SizedBox(width: double.infinity),
       ),
       FutureBuilder<List<OpenIssue>>(

@@ -595,16 +595,20 @@ do $$ begin
   perform public.set_food('00000000-0000-0000-0000-0000000f00d1', array['other'], ' ');
   insert into t values ('26b Other needs a text', false);
 exception when others then insert into t values ('26b Other needs a text', true); end $$;
-select public.set_food('00000000-0000-0000-0000-0000000f00d1', array['vegan', 'gluten_free', 'other', 'pizza'], 'Nut allergy');
-insert into t select '26c food saved (unknown choice dropped)',
-  (select food @> array['vegan','gluten_free','other'] and array_length(food,1) = 3 and food_other = 'Nut allergy'
+do $$ begin
+  perform public.set_food('00000000-0000-0000-0000-0000000f00d1', array['vegan', 'gluten_free'], null);
+  insert into t values ('26c only one food choice', false);
+exception when others then insert into t values ('26c only one food choice', true); end $$;
+select public.set_food('00000000-0000-0000-0000-0000000f00d1', array['other', 'pizza'], 'Nut allergy');
+insert into t select '26c2 food saved (unknown choice dropped)',
+  (select food = array['other'] and food_other = 'Nut allergy'
      from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d1' and user_id = auth.uid());
 select public.set_attendance('00000000-0000-0000-0000-0000000f00d2', 'offline');
 insert into t select '26d last choice carried to the next meeting',
-  (select food_other = 'Nut allergy' and 'vegan' = any (food)
+  (select food_other = 'Nut allergy' and food = array['other']
      from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
-select public.set_food('00000000-0000-0000-0000-0000000f00d2', array['none', 'vegan'], 'x');
-insert into t select '26e None stands alone, Other text cleared',
+select public.set_food('00000000-0000-0000-0000-0000000f00d2', array['none'], 'x');
+insert into t select '26e None saved, Other text cleared',
   (select food = array['none'] and food_other is null
      from public.meeting_attendance where meeting_id = '00000000-0000-0000-0000-0000000f00d2' and user_id = auth.uid());
 select public.set_attendance('00000000-0000-0000-0000-0000000f00d2', 'online');
@@ -654,6 +658,16 @@ insert into t select '28c post seen count and who has not seen',
                    where user_id = '00000000-0000-0000-0000-000000000003');
 update public.posts set pinned = true where id = '00000000-0000-0000-0000-0000000005e1';
 insert into t select '28d officer pins a post', (select pinned from public.posts where id = '00000000-0000-0000-0000-0000000005e1');
+
+-- food closes at the input deadline once answered
+reset role;
+update public.meetings set input_deadline = current_date - 1 where id = '00000000-0000-0000-0000-0000000f00d1';
+set role authenticated;
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  perform public.set_food('00000000-0000-0000-0000-0000000f00d1', array['vegan'], null);
+  insert into t values ('26g food closed after the input deadline', false);
+exception when others then insert into t values ('26g food closed after the input deadline', true); end $$;
 
 reset role;
 \echo
