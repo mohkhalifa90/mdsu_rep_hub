@@ -755,7 +755,7 @@ class _MeetingCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            DateTile(m.startsAt, muted: past),
+            DateTile(m.startsAt, muted: past, color: meetingColor(m.id)),
             const SizedBox(width: 14),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

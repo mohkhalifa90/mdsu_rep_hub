@@ -96,6 +96,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
           for (final (i, m) in d.upcoming.indexed)
             _UpcomingCard(
               meeting: m,
+              color: listColor(i),
               next: i == 0,
               council: widget.data.council(m.councilId)?.name ?? '',
               topics: d.items.where((a) => a.meetingId == m.id).length,
@@ -114,13 +115,13 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
                 }
 
                 setState(() => put(mode));
-                final ok = await runAction(context, () => Repo.setAttendance(m.id, mode),
-                    success: mode == null ? null : 'Saved: ${attendanceLabels[mode]}');
+                final ok = await runAction(context, () => Repo.setAttendance(m.id, mode));
                 if (!ok && mounted) {
                   setState(() => put(before));
                 } else if (mounted) {
                   setState(() => _foodRev[m.id] = (_foodRev[m.id] ?? 0) + 1);
                 }
+                return ok;
               },
             ),
           if (d.past.isNotEmpty) ...[
@@ -177,10 +178,12 @@ class _UpcomingCard extends StatefulWidget {
   final bool noInput;
   final String? attendance;
   final int foodKey;
+  final Color color;
   final VoidCallback onOpen;
-  final ValueChanged<String?> onAttend;
+  final Future<bool> Function(String? mode) onAttend;
   const _UpcomingCard(
       {required this.meeting,
+      required this.color,
       required this.foodKey,
       required this.next,
       required this.council,
@@ -193,29 +196,131 @@ class _UpcomingCard extends StatefulWidget {
   State<_UpcomingCard> createState() => _UpcomingCardState();
 }
 
-/// An upcoming meeting. Not answered yet: the choices show. Answered: a short summary
-/// (attendance, food, topics) with one "Change" button, so a stray tap changes nothing.
+/// An upcoming meeting. Answered: a short summary (attendance, food, topics) with one "Change".
+/// Changing (or answering the first time): pick attendance and food, then one "Save changes".
 class _UpcomingCardState extends State<_UpcomingCard> {
-  bool _editing = false;
+  bool _editing = false, _saving = false;
+  // saved food
+  String? _food;
+  String _foodOther = '';
+  bool _foodLoaded = false;
+  // while changing
+  String? _pMode;
+  String? _pFood;
+  final _pOther = TextEditingController();
+
+  Meeting get m => widget.meeting;
+  bool get _room => m.servesFood;
+
+  /// food changes close after the agenda input deadline (only once answered)
+  bool get _foodClosed {
+    final now = DateTime.now();
+    final d = m.inputDeadline;
+    return _food != null && DateTime(now.year, now.month, now.day).isAfter(DateTime(d.year, d.month, d.day));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pMode = widget.attendance;
+    _loadFood();
+  }
+
+  @override
+  void didUpdateWidget(_UpcomingCard old) {
+    super.didUpdateWidget(old);
+    if (old.foodKey != widget.foodKey) _loadFood(); // attendance saved – the last food may be filled in
+  }
+
+  @override
+  void dispose() {
+    _pOther.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFood() async {
+    if (!_room || widget.attendance != 'offline') {
+      if (mounted) setState(() => _foodLoaded = true);
+      return;
+    }
+    try {
+      final (food, other) = await Repo.myFood(m.id);
+      if (!mounted) return;
+      setState(() {
+        _food = food.isEmpty ? null : food.first;
+        _foodOther = other ?? '';
+        _foodLoaded = true;
+        if (!_editing) {
+          _pFood = _food;
+          _pOther.text = _foodOther;
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => _foodLoaded = true);
+    }
+  }
+
+  void _startEditing() => setState(() {
+        _editing = true;
+        _pMode = widget.attendance;
+        _pFood = _food;
+        _pOther.text = _foodOther;
+      });
+
+  Future<void> _save() async {
+    final mode = _pMode;
+    if (mode == null) {
+      showSnack(context, 'Choose how you will attend');
+      return;
+    }
+    final needFood = mode == 'offline' && _room && !_foodClosed;
+    if (needFood && _pFood == null) {
+      showSnack(context, 'Choose your food preference');
+      return;
+    }
+    if (needFood && _pFood == 'other' && _pOther.text.trim().isEmpty) {
+      showSnack(context, 'Write what "Other" means (e.g. nut allergy)');
+      return;
+    }
+    setState(() => _saving = true);
+    var ok = true;
+    if (mode != widget.attendance) ok = await widget.onAttend(mode);
+    final foodChanged = _pFood != _food || (_pFood == 'other' && _pOther.text.trim() != _foodOther);
+    if (ok && needFood && foodChanged && mounted) {
+      ok = await runAction(
+          context, () => Repo.setFood(m.id, [_pFood!], _pFood == 'other' ? _pOther.text.trim() : null));
+      if (ok) {
+        _food = _pFood;
+        _foodOther = _pFood == 'other' ? _pOther.text.trim() : '';
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _saving = false;
+      if (ok) _editing = false;
+    });
+    if (ok) {
+      showSnack(context, 'Saved');
+      _loadFood(); // read back what is saved
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final m = widget.meeting;
     final attendance = widget.attendance;
     final topics = widget.topics;
     final deadlinePassed = daysUntilDate(m.inputDeadline) < 0;
     final (IconData icon, Color color, String text, String action) = topics > 0
-        ? (Icons.check_circle, Colors.green.shade700, '$topics topic${topics == 1 ? '' : 's'} sent', 'Add more')
+        ? (Icons.check_circle, Colors.green.shade700, '$topics topic${topics == 1 ? '' : 's'} sent', 'Add topics')
         : widget.noInput
-            ? (Icons.check_circle_outline, Colors.blueGrey, 'No topics this time', 'Change')
+            ? (Icons.check_circle_outline, Colors.blueGrey, 'No topics this time', 'Add topics')
             : deadlinePassed
                 ? (Icons.schedule, Colors.grey, 'Topic deadline passed (${fmtDate(m.inputDeadline)})', 'Open')
                 : (Icons.record_voice_over_outlined, Colors.orange.shade800,
                     'Send your topics by ${fmtDate(m.inputDeadline)}', 'Add topics');
     final sameName = m.title.trim().toLowerCase() == widget.council.trim().toLowerCase();
     final editing = attendance == null || _editing;
-    final room = attendance == 'offline' && m.servesFood;
 
     final (IconData aIcon, Color aColor) = switch (attendance) {
       'offline' => (Icons.meeting_room_outlined, Colors.green.shade700),
@@ -223,12 +328,27 @@ class _UpcomingCardState extends State<_UpcomingCard> {
       _ => (Icons.event_busy_outlined, Colors.red.shade700),
     };
 
+    Widget line(IconData i, Color c, String s, {bool bold = false, VoidCallback? onTap}) => InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              Icon(i, size: 16, color: c),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(s,
+                      style: t.textTheme.bodyMedium?.copyWith(color: c, fontWeight: bold ? FontWeight.w600 : null))),
+            ]),
+          ),
+        );
+
+    // ---- answered: the summary ----
     final summary = Container(
       key: const ValueKey('summary'),
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-      decoration: BoxDecoration(
-          color: t.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: t.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(aIcon, size: 18, color: aColor),
@@ -238,61 +358,89 @@ class _UpcomingCardState extends State<_UpcomingCard> {
                 style: t.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: aColor)),
           ),
           FilledButton.tonalIcon(
-            onPressed: () => setState(() => _editing = true),
+            onPressed: _startEditing,
             icon: const Icon(Icons.edit_outlined, size: 16),
             label: const Text('Change'),
           ),
         ]),
-        if (room)
-          FoodPicker(
-            key: ValueKey('${m.id}-${widget.foodKey}-c'),
-            meetingId: m.id,
-            deadline: m.inputDeadline,
-            compact: true,
-            onTap: () => setState(() => _editing = true),
-          ),
-        InkWell(
-          onTap: widget.onOpen,
-          borderRadius: BorderRadius.circular(6),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 8),
-              Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
-            ]),
-          ),
-        ),
+        if (attendance == 'offline' && _room && _foodLoaded)
+          _food == null
+              ? line(Icons.restaurant_outlined, Colors.orange.shade900, 'Food: not chosen yet – tap to choose',
+                  bold: true, onTap: _startEditing)
+              : line(Icons.restaurant_outlined, t.colorScheme.onSurface,
+                  'Food: ${foodSummary([_food!], _foodOther)}${_foodClosed ? '  (closed)' : ''}'),
+        line(icon, color, text, onTap: widget.onOpen),
       ]),
     );
 
+    // ---- answering / changing ----
+    final foodLocked = _foodClosed;
     final choices = Column(
       key: const ValueKey('choices'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(attendance == null ? 'Will you attend?' : 'You attend', style: t.textTheme.labelMedium),
+        Text('Will you attend?', style: t.textTheme.labelMedium),
         const SizedBox(height: 6),
         SizedBox(
           width: double.infinity,
-          child: AttendancePicker(
-            value: attendance,
-            onChanged: (v) {
-              setState(() => _editing = true); // stay open until "Done"
-              widget.onAttend(v);
-            },
-          ),
+          child: AttendancePicker(value: _pMode, onChanged: (v) => setState(() => _pMode = v)),
         ),
-        // food preferences open only for people in the room
         AnimatedSize(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
-          child: room
-              ? FoodPicker(
-                  key: ValueKey('${m.id}-${widget.foodKey}-e'),
-                  meetingId: m.id,
-                  deadline: m.inputDeadline,
-                  startEditing: _editing,
+          child: _pMode == 'offline' && _room
+              ? Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: t.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: t.colorScheme.outlineVariant),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      const Icon(Icons.restaurant_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text.rich(
+                            TextSpan(children: [
+                              const TextSpan(text: 'Special food preference (allergies)'),
+                              TextSpan(text: ' *', style: TextStyle(color: Colors.red.shade700)),
+                            ]),
+                            style: t.textTheme.titleSmall),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(
+                      foodLocked
+                          ? 'Closed on ${fmtDate(m.inputDeadline)} – the food is ordered. Ask the Head of Education to change it.'
+                          : 'Choose one. You can change it until ${fmtDate(m.inputDeadline)}.',
+                      style: t.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      for (final e in foodLabels.entries)
+                        ChoiceChip(
+                          label: Text(e.value),
+                          selected: _pFood == e.key,
+                          onSelected: foodLocked ? null : (on) => setState(() => _pFood = on ? e.key : null),
+                        ),
+                    ]),
+                    if (_pFood == 'other') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _pOther,
+                        enabled: !foodLocked,
+                        maxLength: 200,
+                        decoration: const InputDecoration(
+                            labelText: 'Other – what should we know?',
+                            hintText: 'e.g. nut allergy, halal',
+                            counterText: ''),
+                      ),
+                    ],
+                  ]),
                 )
               : const SizedBox(width: double.infinity),
         ),
@@ -301,36 +449,47 @@ class _UpcomingCardState extends State<_UpcomingCard> {
           Icon(icon, size: 18, color: color),
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
-          TextButton(onPressed: widget.onOpen, child: Text(action)),
+          TextButton.icon(
+              onPressed: widget.onOpen,
+              icon: Icon(action == 'Open' ? Icons.open_in_new : Icons.add, size: 18),
+              label: Text(action)),
         ]),
-        if (attendance != null)
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(onPressed: () => setState(() => _editing = false), child: const Text('Done')),
+        const SizedBox(height: 4),
+        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+          if (attendance != null)
+            TextButton(onPressed: _saving ? null : () => setState(() => _editing = false), child: const Text('Cancel')),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Save changes'),
           ),
+        ]),
       ],
     );
 
+    final mc = widget.color; // every meeting its own colour
     return Card(
-      shape: widget.next
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.colorScheme.primary, width: 1.5))
-          : null,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: widget.next ? BorderSide(color: mc, width: 1.5) : BorderSide.none),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
+      child: Container(
+        decoration: BoxDecoration(border: Border(left: BorderSide(color: mc, width: 5))),
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: widget.onOpen,
             borderRadius: BorderRadius.circular(10),
             child: Row(children: [
-              DateTile(m.startsAt),
+              DateTile(m.startsAt, color: mc),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
                     '${widget.next ? 'NEXT · ' : ''}${relativeDay(m.startsAt).toUpperCase()} · ${fmtTime(m.startsAt)}',
-                    style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.primary, letterSpacing: 0.6),
+                    style: t.textTheme.labelSmall?.copyWith(color: mc, letterSpacing: 0.6),
                   ),
                   const SizedBox(height: 2),
                   Text(m.title, style: t.textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),

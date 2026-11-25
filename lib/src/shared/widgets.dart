@@ -577,12 +577,15 @@ class DateTile extends StatelessWidget {
   final DateTime date;
   final bool muted;
   final double width;
-  const DateTile(this.date, {super.key, this.muted = false, this.width = 54});
+  final Color? color; // the meeting's own colour
+  const DateTile(this.date, {super.key, this.muted = false, this.width = 54, this.color});
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final bg = muted ? t.colorScheme.surfaceContainerHighest : t.colorScheme.primaryContainer;
-    final fg = muted ? t.colorScheme.onSurfaceVariant : t.colorScheme.onPrimaryContainer;
+    final bg = muted
+        ? t.colorScheme.surfaceContainerHighest
+        : (color == null ? t.colorScheme.primaryContainer : color!.withValues(alpha: 0.16));
+    final fg = muted ? t.colorScheme.onSurfaceVariant : (color ?? t.colorScheme.onPrimaryContainer);
     const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     return Container(
       width: width,
@@ -611,3 +614,16 @@ int daysUntilDate(DateTime d) {
   final now = DateTime.now();
   return DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
 }
+
+
+/// Each meeting gets its own colour (same meeting = same colour everywhere)
+const _meetingPalette = [
+  Color(0xFF1E88E5), Color(0xFF8E24AA), Color(0xFF00897B), Color(0xFFE65100),
+  Color(0xFF3949AB), Color(0xFFC2185B), Color(0xFF2E7D32), Color(0xFF6D4C41),
+  Color(0xFF0097A7), Color(0xFF5E35B1),
+];
+Color meetingColor(String id) =>
+    _meetingPalette[id.codeUnits.fold<int>(0, (a, c) => (a * 31 + c) & 0x7fffffff) % _meetingPalette.length];
+
+/// Colours for a list: next to each other they are always different
+Color listColor(int i) => _meetingPalette[i % _meetingPalette.length];
