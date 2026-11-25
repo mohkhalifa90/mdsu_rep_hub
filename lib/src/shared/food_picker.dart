@@ -12,7 +12,17 @@ class FoodPicker extends StatefulWidget {
   final String meetingId;
   final DateTime deadline; // last day to change (the agenda input deadline)
   final bool locked; // meeting has started
-  const FoodPicker({super.key, required this.meetingId, required this.deadline, this.locked = false});
+  final bool compact; // one line with the answer (the meeting card's summary)
+  final bool startEditing; // open with the choices showing (the card's "Change")
+  final VoidCallback? onTap; // compact: tapping the line
+  const FoodPicker(
+      {super.key,
+      required this.meetingId,
+      required this.deadline,
+      this.locked = false,
+      this.compact = false,
+      this.startEditing = false,
+      this.onTap});
   @override
   State<FoodPicker> createState() => _FoodPickerState();
 }
@@ -40,7 +50,7 @@ class _FoodPickerState extends State<FoodPicker> {
         _savedOther = v.$2 ?? '';
         _choice = _saved;
         _other.text = _savedOther;
-        _editing = _saved == null;
+        _editing = _saved == null || (widget.startEditing && !_closed);
         _loading = false;
       });
     }).catchError((_) {
@@ -81,6 +91,25 @@ class _FoodPickerState extends State<FoodPicker> {
     final t = Theme.of(context);
     final missing = !_loading && _saved == null;
     final answer = _saved == null ? '' : foodSummary([_saved!], _savedOther);
+    if (widget.compact) {
+      if (_loading) return const SizedBox(height: 20);
+      final color = missing ? Colors.orange.shade900 : t.colorScheme.onSurface;
+      return InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [
+            Icon(Icons.restaurant_outlined, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(missing ? 'Food: not chosen yet – tap to choose' : 'Food: $answer',
+                  style: t.textTheme.bodyMedium?.copyWith(color: color, fontWeight: missing ? FontWeight.w600 : null)),
+            ),
+          ]),
+        ),
+      );
+    }
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(12),

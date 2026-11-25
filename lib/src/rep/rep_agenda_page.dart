@@ -169,7 +169,7 @@ class _RepAgendaPageState extends State<RepAgendaPage> {
 }
 
 /// An upcoming meeting: date, attendance buttons and where your topics stand.
-class _UpcomingCard extends StatelessWidget {
+class _UpcomingCard extends StatefulWidget {
   final Meeting meeting;
   final bool next;
   final String council;
@@ -189,23 +189,130 @@ class _UpcomingCard extends StatelessWidget {
       required this.attendance,
       required this.onOpen,
       required this.onAttend});
+  @override
+  State<_UpcomingCard> createState() => _UpcomingCardState();
+}
+
+/// An upcoming meeting. Not answered yet: the choices show. Answered: a short summary
+/// (attendance, food, topics) with one "Change" button, so a stray tap changes nothing.
+class _UpcomingCardState extends State<_UpcomingCard> {
+  bool _editing = false;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
-    final m = meeting;
+    final m = widget.meeting;
+    final attendance = widget.attendance;
+    final topics = widget.topics;
     final deadlinePassed = daysUntilDate(m.inputDeadline) < 0;
     final (IconData icon, Color color, String text, String action) = topics > 0
         ? (Icons.check_circle, Colors.green.shade700, '$topics topic${topics == 1 ? '' : 's'} sent', 'Add more')
-        : noInput
+        : widget.noInput
             ? (Icons.check_circle_outline, Colors.blueGrey, 'No topics this time', 'Change')
             : deadlinePassed
                 ? (Icons.schedule, Colors.grey, 'Topic deadline passed (${fmtDate(m.inputDeadline)})', 'Open')
                 : (Icons.record_voice_over_outlined, Colors.orange.shade800,
                     'Send your topics by ${fmtDate(m.inputDeadline)}', 'Add topics');
-    final sameName = m.title.trim().toLowerCase() == council.trim().toLowerCase();
+    final sameName = m.title.trim().toLowerCase() == widget.council.trim().toLowerCase();
+    final editing = attendance == null || _editing;
+    final room = attendance == 'offline' && m.servesFood;
+
+    final (IconData aIcon, Color aColor) = switch (attendance) {
+      'offline' => (Icons.meeting_room_outlined, Colors.green.shade700),
+      'online' => (Icons.videocam_outlined, Colors.blue.shade700),
+      _ => (Icons.event_busy_outlined, Colors.red.shade700),
+    };
+
+    final summary = Container(
+      key: const ValueKey('summary'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+          color: t.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(aIcon, size: 18, color: aColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(attendanceLabels[attendance] ?? '',
+                style: t.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: aColor)),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: () => setState(() => _editing = true),
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('Change'),
+          ),
+        ]),
+        if (room)
+          FoodPicker(
+            key: ValueKey('${m.id}-${widget.foodKey}-c'),
+            meetingId: m.id,
+            deadline: m.inputDeadline,
+            compact: true,
+            onTap: () => setState(() => _editing = true),
+          ),
+        InkWell(
+          onTap: widget.onOpen,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
+            ]),
+          ),
+        ),
+      ]),
+    );
+
+    final choices = Column(
+      key: const ValueKey('choices'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(attendance == null ? 'Will you attend?' : 'You attend', style: t.textTheme.labelMedium),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: AttendancePicker(
+            value: attendance,
+            onChanged: (v) {
+              setState(() => _editing = true); // stay open until "Done"
+              widget.onAttend(v);
+            },
+          ),
+        ),
+        // food preferences open only for people in the room
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: room
+              ? FoodPicker(
+                  key: ValueKey('${m.id}-${widget.foodKey}-e'),
+                  meetingId: m.id,
+                  deadline: m.inputDeadline,
+                  startEditing: _editing,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
+          TextButton(onPressed: widget.onOpen, child: Text(action)),
+        ]),
+        if (attendance != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton(onPressed: () => setState(() => _editing = false), child: const Text('Done')),
+          ),
+      ],
+    );
+
     return Card(
-      shape: next
+      shape: widget.next
           ? RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.colorScheme.primary, width: 1.5))
           : null,
@@ -214,7 +321,7 @@ class _UpcomingCard extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
-            onTap: onOpen,
+            onTap: widget.onOpen,
             borderRadius: BorderRadius.circular(10),
             child: Row(children: [
               DateTile(m.startsAt),
@@ -222,12 +329,12 @@ class _UpcomingCard extends StatelessWidget {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
-                    '${next ? 'NEXT · ' : ''}${relativeDay(m.startsAt).toUpperCase()} · ${fmtTime(m.startsAt)}',
+                    '${widget.next ? 'NEXT · ' : ''}${relativeDay(m.startsAt).toUpperCase()} · ${fmtTime(m.startsAt)}',
                     style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.primary, letterSpacing: 0.6),
                   ),
                   const SizedBox(height: 2),
                   Text(m.title, style: t.textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  if (!sameName && council.isNotEmpty) Text(council, style: t.textTheme.bodySmall),
+                  if (!sameName && widget.council.isNotEmpty) Text(widget.council, style: t.textTheme.bodySmall),
                   if (m.location != null && m.location!.isNotEmpty)
                     Row(children: [
                       Icon(Icons.place_outlined, size: 14, color: t.colorScheme.onSurfaceVariant),
@@ -240,25 +347,10 @@ class _UpcomingCard extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 12),
-          Text(attendance == null ? 'Will you attend?' : 'You attend', style: t.textTheme.labelMedium),
-          const SizedBox(height: 6),
-          SizedBox(width: double.infinity, child: AttendancePicker(value: attendance, onChanged: onAttend)),
-          // food preferences open only for people in the room
-          AnimatedSize(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: attendance == 'offline' && m.servesFood
-                ? FoodPicker(key: ValueKey('${m.id}-$foodKey'), meetingId: m.id, deadline: m.inputDeadline)
-                : const SizedBox(width: double.infinity),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: editing ? choices : summary,
           ),
-          const SizedBox(height: 6),
-          Row(children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 8),
-            Expanded(child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: color))),
-            TextButton(onPressed: onOpen, child: Text(action)),
-          ]),
         ]),
       ),
     );
