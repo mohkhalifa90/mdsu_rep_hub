@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models.dart';
 import '../data/repo.dart';
@@ -78,22 +80,58 @@ List<String> tagsIn(String text, Set<String> tags, Map<String, String> names) =>
     [for (final id in tags) if (names[id] != null && text.contains('@${names[id]}')) id];
 
 /// Text with tagged names highlighted, as a span (for measuring and folding)
+/// Web links (https://…, www.…) and email addresses in a text
+final _linkRe = RegExp(r'(https?://[^\s<>"]+|www\.[^\s<>"]+|[\w.+-]+@[\w-]+(\.[\w-]+)+)', caseSensitive: false);
+
+/// Opens a link from a post or comment in the browser (emails open the mail app)
+Future<void> openLink(String raw) async {
+  final uri = raw.contains('@') && !raw.contains('/')
+      ? Uri(scheme: 'mailto', path: raw)
+      : Uri.parse(raw.toLowerCase().startsWith('http') ? raw : 'https://$raw');
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// Text with tagged names highlighted and links/emails clickable
 TextSpan mentionSpan(BuildContext context, String body, List<String> mentions, Map<String, String> names) {
   final t = Theme.of(context);
   final tagged = [
     for (final id in mentions)
       if (names[id] != null) '@${names[id]}'
   ];
-  if (tagged.isEmpty) return TextSpan(text: body, style: t.textTheme.bodyMedium);
-  final re = RegExp(tagged.map(RegExp.escape).join('|'));
-  final spans = <TextSpan>[];
-  var last = 0;
-  for (final hit in re.allMatches(body)) {
-    if (hit.start > last) spans.add(TextSpan(text: body.substring(last, hit.start)));
-    spans.add(TextSpan(text: hit.group(0), style: TextStyle(color: t.colorScheme.primary, fontWeight: FontWeight.w600)));
-    last = hit.end;
+  final tagRe = tagged.isEmpty ? null : RegExp(tagged.map(RegExp.escape).join('|'));
+  final tagStyle = TextStyle(color: t.colorScheme.primary, fontWeight: FontWeight.w600);
+  final linkStyle = TextStyle(color: t.colorScheme.primary, decoration: TextDecoration.underline);
+
+  // plain text → tags highlighted
+  void addText(List<InlineSpan> out, String text) {
+    if (text.isEmpty) return;
+    if (tagRe == null) return out.add(TextSpan(text: text));
+    var last = 0;
+    for (final hit in tagRe.allMatches(text)) {
+      if (hit.start > last) out.add(TextSpan(text: text.substring(last, hit.start)));
+      out.add(TextSpan(text: hit.group(0), style: tagStyle));
+      last = hit.end;
+    }
+    if (last < text.length) out.add(TextSpan(text: text.substring(last)));
   }
-  if (last < body.length) spans.add(TextSpan(text: body.substring(last)));
+
+  final spans = <InlineSpan>[];
+  var last = 0;
+  for (final m in _linkRe.allMatches(body)) {
+    var url = m.group(0)!;
+    // a full stop or bracket right after a link is not part of it
+    final trail = RegExp(r'[.,;:!?)\]]+$').firstMatch(url)?.group(0) ?? '';
+    url = url.substring(0, url.length - trail.length);
+    addText(spans, body.substring(last, m.start));
+    spans.add(TextSpan(
+      text: url,
+      style: linkStyle,
+      mouseCursor: SystemMouseCursors.click,
+      recognizer: TapGestureRecognizer()..onTap = () => openLink(url),
+    ));
+    last = m.start + url.length;
+  }
+  addText(spans, body.substring(last));
   return TextSpan(style: t.textTheme.bodyMedium, children: spans);
 }
 
@@ -122,7 +160,8 @@ class _ExpandableTextState extends State<ExpandableText> {
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
         )..layout(maxWidth: c.maxWidth);
-        if (!tp.didExceedMaxLines) return SelectableText.rich(widget.span);
+        // SelectionArea keeps the text selectable and the links clickable
+        if (!tp.didExceedMaxLines) return SelectionArea(child: Text.rich(widget.span));
         final link = TextButton(
           style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
           onPressed: () => setState(() => _open = !_open),
@@ -130,7 +169,7 @@ class _ExpandableTextState extends State<ExpandableText> {
         );
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _open
-              ? SelectableText.rich(widget.span)
+              ? SelectionArea(child: Text.rich(widget.span))
               : Text.rich(widget.span, maxLines: widget.maxLines, overflow: TextOverflow.ellipsis),
           link,
         ]);
