@@ -99,6 +99,7 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
 /// Record the university's answer or change status. Reps may only set "answered".
 Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required bool officer}) async {
   final events = await Repo.issueEvents(issue.id);
+  final names = await Repo.memberNames();
   if (!context.mounted) return false;
   String status = issue.status;
   final response = TextEditingController(text: issue.response ?? '');
@@ -114,10 +115,10 @@ Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required 
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (issue.details.isNotEmpty) Text(issue.details),
-              const SizedBox(height: 8),
-              for (final e in events)
-                Text('${fmtDateTime(DateTime.parse(e['at'] as String).toLocal())} – ${e['event']}',
-                    style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 12),
+              Text('History', style: Theme.of(ctx).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              for (final e in events) _historyLine(ctx, e, names),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: status,
@@ -143,9 +144,63 @@ Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required 
     ),
   );
   if (ok != true || !context.mounted) return false;
+  final newResponse = response.text.trim().isEmpty ? null : response.text.trim();
+  if (status == issue.status && newResponse == (issue.response?.trim().isEmpty ?? true ? null : issue.response!.trim())) {
+    return false; // nothing changed – no history line, no notification
+  }
   return runAction(
     context,
-    () => Repo.setIssueStatus(issue.id, status, response: response.text.trim().isEmpty ? null : response.text.trim()),
+    () => Repo.setIssueStatus(issue.id, status, response: newResponse),
     success: 'Updated – council members are notified',
+  );
+}
+
+
+/// One line of a follow-up's history: when, who, the status and the answer
+Widget _historyLine(BuildContext context, Map<String, dynamic> e, Map<String, String> names) {
+  final t = Theme.of(context);
+  // older lines may hold a garbled dash; show it right
+  final text = (e['event'] as String? ?? '').replaceAll('\u00e2\u20ac\u201c', '\u2013').replaceAll('\u00e2\u20ac\u0093', '\u2013');
+  final who = names[e['actor']] ?? '';
+  String? status;
+  var answer = '';
+  if (text.startsWith('Status: ')) {
+    final rest = text.substring(8);
+    final i = rest.indexOf(' \u2013 ');
+    status = i < 0 ? rest : rest.substring(0, i);
+    answer = i < 0 ? '' : rest.substring(i + 3);
+  }
+  final color = switch (status) {
+    'answered' => Colors.green.shade700,
+    'escalated' => Colors.red.shade700,
+    'closed' => Colors.blueGrey,
+    _ => Colors.orange.shade800,
+  };
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 5),
+        child: Icon(Icons.circle, size: 8, color: status == null ? t.colorScheme.outline : color),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            '${fmtDateTime(DateTime.parse(e['at'] as String).toLocal())}${who.isEmpty ? '' : ' \u00b7 $who'}',
+            style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+          ),
+          if (status == null)
+            Text(text, style: t.textTheme.bodySmall)
+          else
+            Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: issueStatusLabels[status] ?? status,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+              if (answer.isNotEmpty) TextSpan(text: ': $answer'),
+            ]), style: t.textTheme.bodySmall),
+        ]),
+      ),
+    ]),
   );
 }
