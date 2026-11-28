@@ -360,6 +360,7 @@ class Issue {
   final String status;
   final String? response;
   final DateTime createdAt;
+  final DateTime? editedAt;
   Issue.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         councilId = m['council_id'] as String,
@@ -370,7 +371,8 @@ class Issue {
         responsible = m['responsible'] as String?,
         status = m['status'] as String,
         response = m['response'] as String?,
-        createdAt = _dt(m['created_at']);
+        createdAt = _dt(m['created_at']),
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']);
   bool get isOpen => status == 'awaiting' || status == 'escalated';
 }
 

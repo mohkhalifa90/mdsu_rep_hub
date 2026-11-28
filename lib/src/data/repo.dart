@@ -492,6 +492,15 @@ class Repo {
   static Future<void> setIssueStatus(String id, String status, {String? response}) =>
       sb.rpc('set_issue_status', params: {'p_issue': id, 'p_status': status, 'p_response': response});
 
+  /// Head of Education always; the person who raised it until someone else posts an update
+  static Future<bool> canChangeIssue(String id) async =>
+      (await sb.rpc('can_change_issue', params: {'p_issue': id})) == true;
+
+  static Future<void> editIssue(String id, {required String title, required String details, String? responsible}) =>
+      sb.rpc('edit_issue', params: {'p_issue': id, 'p_title': title, 'p_details': details, 'p_responsible': responsible});
+
+  static Future<void> deleteIssue(String id) => sb.rpc('delete_issue', params: {'p_issue': id});
+
   static Future<List<Map<String, dynamic>>> issueEvents(String issueId) async => List<Map<String, dynamic>>.from(
       await sb.from('issue_events').select().eq('issue_id', issueId).order('at') as List);
 

@@ -669,6 +669,24 @@ do $$ begin
   insert into t values ('26g food closed after the input deadline', false);
 exception when others then insert into t values ('26g food closed after the input deadline', true); end $$;
 
+-- 29. Edit / delete a follow-up: the raiser until others answer, the Head of Education always
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.issues (id, council_id, title)
+select '00000000-0000-0000-0000-00000000155e', id, 'Printer broken' from public.councils where type = 'siec' limit 1;
+select public.edit_issue('00000000-0000-0000-0000-00000000155e', 'Printer broken in library', 'Floor 2', null);
+insert into t select '29 raiser edits own issue',
+  (select title = 'Printer broken in library' and edited_at is not null from public.issues where id = '00000000-0000-0000-0000-00000000155e');
+select from pg_temp.as_user('Head of Education');
+select public.set_issue_status('00000000-0000-0000-0000-00000000155e', 'answered', 'Fixed next week');
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  perform public.delete_issue('00000000-0000-0000-0000-00000000155e');
+  insert into t values ('29b raiser cannot delete after an answer', false);
+exception when others then insert into t values ('29b raiser cannot delete after an answer', true); end $$;
+select from pg_temp.as_user('Head of Education');
+select public.delete_issue('00000000-0000-0000-0000-00000000155e');
+insert into t select '29c officer deletes', not exists (select 1 from public.issues where id = '00000000-0000-0000-0000-00000000155e');
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

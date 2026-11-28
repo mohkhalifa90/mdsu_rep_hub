@@ -103,7 +103,18 @@ class _RepShellState extends State<RepShell> {
                   councils: d.councils, standalone: true, focusId: parts.length > 1 ? parts[1] : null)));
       return;
     }
-    if (link == 'followups' || link == 'more') return setState(() => _tab = 4);
+    if (link == 'more') return setState(() => _tab = 4);
+    if (link == 'followups' || link.startsWith('followups/')) {
+      final parts = link.split('/');
+      setState(() => _tab = 4);
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Follow-ups')),
+                  body: RepFollowUpsPage(data: d, openIssueId: parts.length > 1 ? parts[1] : null))));
+      return;
+    }
     if (link == 'tutoring' || link.startsWith('tutoring/')) {
       final parts = link.split('/');
       setState(() => _tab = 4);

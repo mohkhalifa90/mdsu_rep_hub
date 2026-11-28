@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import 'format.dart';
+import 'interactions.dart';
 import 'widgets.dart';
 
 /// Log an issue raised in a council meeting (SIEC protocol 4.4).
@@ -21,7 +22,8 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
   String council = councils.first.id;
   String? meeting;
   final title = TextEditingController(), details = TextEditingController(), resp = TextEditingController();
-  final ok = await showDialog<bool>(
+  // the dialog closes with: true = post update, 'edit' / 'delete' = change the issue itself
+  final ok = await showDialog<Object>(
     context: context,
     builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
       final past = meetings.where((m) => m.isPast && m.councilId == council).toList().reversed.toList();
@@ -97,64 +99,163 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
 }
 
 /// Record the university's answer or change status. Reps may only set "answered".
+/// A follow-up as a thread: the issue as it was written (never changed), every update under it
+/// (who, status, note), and a box at the bottom to add a new update.
 Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required bool officer}) async {
-  final events = await Repo.issueEvents(issue.id);
+  final events = (await Repo.issueEvents(issue.id)).reversed.toList(); // oldest first, like a conversation
   final names = await Repo.memberNames();
+  final canChange = await Repo.canChangeIssue(issue.id).catchError((_) => false);
   if (!context.mounted) return false;
   String status = issue.status;
-  final response = TextEditingController(text: issue.response ?? '');
+  final note = TextEditingController();
   final allowed = officer ? issueStatusLabels.keys.toList() : ['awaiting', 'answered'];
   if (!allowed.contains(status)) allowed.add(status);
+  final t = Theme.of(context);
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setD) => AlertDialog(
-        title: Text(issue.title),
-        content: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (issue.details.isNotEmpty) Text(issue.details),
-              const SizedBox(height: 12),
-              Text('History', style: Theme.of(ctx).textTheme.titleSmall),
-              const SizedBox(height: 4),
-              for (final e in events) _historyLine(ctx, e, names),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: status,
-                decoration: const InputDecoration(labelText: 'Status'),
-                items: [
-                  for (final s in allowed) DropdownMenuItem(value: s, child: Text(issueStatusLabels[s] ?? s)),
-                ],
-                onChanged: (v) => setD(() => status = v ?? status),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                  controller: response,
+      builder: (ctx, setD) {
+        final changed = status != issue.status || note.text.trim().isNotEmpty;
+        return AlertDialog(
+          title: Text(issue.title),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // ---- the issue, as written ----
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: t.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Expanded(
+                        child: Text(
+                          'Raised by ${names[issue.raisedBy] ?? '?'} \u00b7 ${fmtDateTime(issue.createdAt)}'
+                          '${(issue.responsible ?? '').isEmpty ? '' : ' \u00b7 responsible: ${issue.responsible}'}'
+                          '${issue.editedAt != null ? ' \u00b7 edited' : ''}',
+                          style: t.textTheme.labelSmall?.copyWith(color: t.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      if (canChange)
+                        EditDeleteMenu(
+                          canEdit: true,
+                          canDelete: true,
+                          onEdit: () => Navigator.pop(ctx, 'edit'),
+                          onDelete: () => Navigator.pop(ctx, 'delete'),
+                        ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(issue.details.isEmpty ? issue.title : issue.details, style: t.textTheme.bodyMedium),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                Text('Updates', style: t.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                if (events.where((e) => e['event'] != 'Issue logged').isEmpty)
+                  Text('No updates yet', style: t.textTheme.bodySmall),
+                for (final e in events)
+                  if (e['event'] != 'Issue logged') _historyLine(ctx, e, names),
+                const Divider(height: 24),
+                // ---- add an update ----
+                Text('Add an update', style: t.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: note,
                   maxLines: 3,
-                  decoration: const InputDecoration(labelText: "University's response (written or verbal)")),
-            ]),
+                  onChanged: (_) => setD(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'What did the university say, or what happened?',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: status,
+                  decoration: const InputDecoration(labelText: 'Status'),
+                  items: [
+                    for (final s in allowed) DropdownMenuItem(value: s, child: Text(issueStatusLabels[s] ?? s)),
+                  ],
+                  onChanged: (v) => setD(() => status = v ?? status),
+                ),
+                if (!officer)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('Only the Head of Education can escalate or close a follow-up.',
+                        style: t.textTheme.bodySmall),
+                  ),
+              ]),
+            ),
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ],
-      ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Close')),
+            FilledButton(
+              onPressed: changed ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('Post update'),
+            ),
+          ],
+        );
+      },
     ),
   );
-  if (ok != true || !context.mounted) return false;
-  final newResponse = response.text.trim().isEmpty ? null : response.text.trim();
-  if (status == issue.status && newResponse == (issue.response?.trim().isEmpty ?? true ? null : issue.response!.trim())) {
-    return false; // nothing changed – no history line, no notification
+  if (!context.mounted) return false;
+  if (ok == 'edit') return _editIssue(context, issue);
+  if (ok == 'delete') {
+    if (!await confirm(context, 'Delete this follow-up?', '“${issue.title}” and all its updates are deleted.',
+        ok: 'Delete')) {
+      return false;
+    }
+    if (!context.mounted) return false;
+    return runAction(context, () => Repo.deleteIssue(issue.id), success: 'Follow-up deleted');
   }
+  if (ok != true) return false;
+  final text = note.text.trim();
   return runAction(
     context,
-    () => Repo.setIssueStatus(issue.id, status, response: newResponse),
-    success: 'Updated – council members are notified',
+    // an empty note keeps the last answer; a new note becomes the latest answer shown in the list
+    () => Repo.setIssueStatus(issue.id, status, response: text.isEmpty ? null : text),
+    success: 'Update posted – council members are notified',
   );
 }
 
+/// Change the issue itself (its text, details and who is responsible)
+Future<bool> _editIssue(BuildContext context, Issue issue) async {
+  final title = TextEditingController(text: issue.title);
+  final details = TextEditingController(text: issue.details);
+  final resp = TextEditingController(text: issue.responsible ?? '');
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Edit follow-up'),
+      content: SizedBox(
+        width: 460,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: title, decoration: const InputDecoration(labelText: 'Issue')),
+          const SizedBox(height: 10),
+          TextField(
+              controller: details,
+              maxLines: 4,
+              decoration: const InputDecoration(labelText: 'Details / what was promised', alignLabelWithHint: true)),
+          const SizedBox(height: 10),
+          TextField(controller: resp, decoration: const InputDecoration(labelText: 'Responsible at the university')),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return false;
+  return runAction(
+      context,
+      () => Repo.editIssue(issue.id,
+          title: title.text, details: details.text, responsible: resp.text.trim().isEmpty ? null : resp.text),
+      success: 'Follow-up updated');
+}
 
 /// One line of a follow-up's history: when, who, the status and the answer
 Widget _historyLine(BuildContext context, Map<String, dynamic> e, Map<String, String> names) {

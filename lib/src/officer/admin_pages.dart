@@ -17,15 +17,31 @@ import 'officer_shell.dart';
 // ============================ Follow-ups ===================================
 class OfficerFollowUpsPage extends StatefulWidget {
   final OfficerData data;
-  const OfficerFollowUpsPage({super.key, required this.data});
+  final String? openIssueId; // from a notification
+  const OfficerFollowUpsPage({super.key, required this.data, this.openIssueId});
   @override
   State<OfficerFollowUpsPage> createState() => _OfficerFollowUpsPageState();
 }
 
 class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
   late Future<(List<Issue>, Map<String, String>)> _f = _load();
-  String _filter = 'open';
-  Future<(List<Issue>, Map<String, String>)> _load() async => (await Repo.issues(), await Repo.memberNames());
+  late String _filter = widget.openIssueId == null ? 'open' : 'all';
+  bool _opened = false;
+  Future<(List<Issue>, Map<String, String>)> _load() async {
+    final r = (await Repo.issues(), await Repo.memberNames());
+    // opened from a notification: show that follow-up straight away
+    if (!_opened && widget.openIssueId != null) {
+      _opened = true;
+      final hit = r.$1.where((i) => i.id == widget.openIssueId);
+      if (hit.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (mounted && await showIssueUpdateDialog(context, hit.first, officer: true)) _reload();
+        });
+      }
+    }
+    return r;
+  }
+
   void _reload() => setState(() => _f = _load());
 
   @override

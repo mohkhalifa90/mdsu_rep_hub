@@ -147,14 +147,31 @@ class MorePage extends StatelessWidget {
 
 class RepFollowUpsPage extends StatefulWidget {
   final RepData data;
-  const RepFollowUpsPage({super.key, required this.data});
+  final String? openIssueId; // from a notification
+  const RepFollowUpsPage({super.key, required this.data, this.openIssueId});
   @override
   State<RepFollowUpsPage> createState() => _RepFollowUpsPageState();
 }
 
 class _RepFollowUpsPageState extends State<RepFollowUpsPage> {
-  late Future<List<Issue>> _f = Repo.issues();
-  void _reload() => setState(() => _f = Repo.issues());
+  late Future<List<Issue>> _f = _load();
+  bool _opened = false;
+  Future<List<Issue>> _load() async {
+    final list = await Repo.issues();
+    // opened from a notification: show that follow-up straight away
+    if (!_opened && widget.openIssueId != null) {
+      _opened = true;
+      final hit = list.where((i) => i.id == widget.openIssueId);
+      if (hit.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (mounted && await showIssueUpdateDialog(context, hit.first, officer: false)) _reload();
+        });
+      }
+    }
+    return list;
+  }
+
+  void _reload() => setState(() => _f = _load());
 
   @override
   Widget build(BuildContext context) => Scaffold(

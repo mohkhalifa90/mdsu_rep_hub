@@ -135,7 +135,7 @@ class _OfficerShellState extends State<OfficerShell> {
             focusId: _linkArg2),
         'posts' => PostsPage(key: ValueKey('po$_refresh'), officer: true, councils: d.councils, focusId: _linkArg),
         'agenda' => AgendaBuilderPage(key: ValueKey('ag$_refresh'), data: d, openMeetingId: _linkArg),
-        'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d),
+        'followups' => OfficerFollowUpsPage(key: ValueKey('fu$_refresh'), data: d, openIssueId: _linkArg),
         'reps' => RepsPage(key: ValueKey('re$_refresh'), data: d, initialSearch: _linkArg),
         'programmes' =>
           ProgrammesPage(key: ValueKey('pr$_refresh'), data: d, onChanged: _reload, openCouncilId: _linkArg),
