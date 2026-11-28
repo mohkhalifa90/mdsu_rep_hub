@@ -50,6 +50,15 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
                   meeting = null;
                 }),
               ),
+              // who will see it and get its notifications
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text(
+                    councils.firstWhere((c) => c.id == council, orElse: () => councils.first).isSiec
+                        ? 'Seen by all representatives (SIEC).'
+                        : 'Seen only by the reps of this council and the Head of Education.',
+                    style: Theme.of(ctx).textTheme.bodySmall),
+              ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String?>(
                 value: meeting,
@@ -62,8 +71,24 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
                 ],
                 onChanged: (v) => setD(() => meeting = v),
               ),
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text(
+                    past.isEmpty
+                        ? 'No earlier meetings for this council yet – you can leave it empty.'
+                        : 'Optional – leave it empty if it was not raised in a meeting here.',
+                    style: Theme.of(ctx).textTheme.bodySmall),
+              ),
               const SizedBox(height: 10),
-              TextField(controller: title, decoration: const InputDecoration(labelText: 'Issue')),
+              TextField(
+                controller: title,
+                autofocus: true,
+                onChanged: (_) => setD(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Issue (short title) *',
+                  hintText: 'e.g. Exam results are late',
+                ),
+              ),
               const SizedBox(height: 10),
               TextField(
                   controller: details,
@@ -78,7 +103,10 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          // the issue title is needed – Save stays off until it is written
+          FilledButton(
+              onPressed: title.text.trim().isEmpty ? null : () => Navigator.pop(ctx, true),
+              child: const Text('Save')),
         ],
       );
     }),
