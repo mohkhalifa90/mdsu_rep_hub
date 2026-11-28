@@ -179,7 +179,8 @@ class _RepShellState extends State<RepShell> {
                     icon: badgeIcon(Icons.event_note_outlined, Badges.instance.of('meetings')), label: 'Meetings'),
                 NavigationDestination(
                     icon: badgeIcon(Icons.forum_outlined, Badges.instance.of('channels')), label: 'Channels'),
-                const NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
+                NavigationDestination(
+                    icon: badgeIcon(Icons.more_horiz, Badges.instance.of('followups')), label: 'More'),
               ],
             ),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repo.dart';
 import '../shared/avatars.dart';
+import '../shared/badges.dart';
 import '../shared/posts.dart';
 import '../shared/format.dart';
 import '../shared/interactions.dart';
@@ -156,8 +157,16 @@ class RepFollowUpsPage extends StatefulWidget {
 class _RepFollowUpsPageState extends State<RepFollowUpsPage> {
   late Future<List<Issue>> _f = _load();
   bool _opened = false;
+  String _filter = 'open';
+  Map<String, String> _names = {};
+  DateTime? _since; // when I opened Follow-ups before – newer changes by others are "new"
   Future<List<Issue>> _load() async {
+    if (_since == null) {
+      _since = await Repo.markSeen('followups').catchError((_) => DateTime.now());
+      Badges.instance.refresh();
+    }
     final list = await Repo.issues();
+    _names = await Repo.memberNames().catchError((_) => <String, String>{});
     // opened from a notification: show that follow-up straight away
     if (!_opened && widget.openIssueId != null) {
       _opened = true;
@@ -192,27 +201,51 @@ class _RepFollowUpsPageState extends State<RepFollowUpsPage> {
         body: Loader<List<Issue>>(
           future: _f,
           onRetry: _reload,
-          builder: (context, issues) => issues.isEmpty
-              ? const EmptyState('No issues logged in your councils')
-              : ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 90), children: [
-                  for (final i in issues)
-                    Card(
-                      child: ListTile(
-                        title: Text(i.title),
-                        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const SizedBox(height: 4),
-                          StatusChip.issue(i.status),
-                          const SizedBox(height: 4),
-                          Text('${widget.data.council(i.councilId)?.name ?? ''} · ${i.responsible ?? ''}'),
-                          if ((i.response ?? '').isNotEmpty)
-                            Text('↳ ${i.response}', style: TextStyle(color: Colors.green.shade800)),
-                        ]),
-                        onTap: () async {
-                          if (await showIssueUpdateDialog(context, i, officer: false)) _reload();
-                        },
-                      ),
-                    ),
-                ]),
+          builder: (context, issues) {
+            bool isNew(Issue i) => _since != null && i.isNewFor(Repo.uid, _since!);
+            bool inFilter(Issue i, String f) => f == 'all' || (f == 'open' ? i.isOpen : i.status == f);
+            final list = issues.where((i) => inFilter(i, _filter)).toList()
+              ..sort((a, b) => (isNew(b) ? 1 : 0).compareTo(isNew(a) ? 1 : 0)); // new ones first
+            return CenteredList(children: [
+              Text('Issues raised in your councils, followed until the university answers. '
+                  'Open issues come back on the next agenda by themselves.',
+                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final (f, label) in const [
+                  ('open', 'Open'),
+                  ('answered', 'Answered'),
+                  ('closed', 'Closed'),
+                  ('all', 'All'),
+                ])
+                  ChoiceChip(
+                    label: Text('$label (${issues.where((i) => inFilter(i, f)).length})'),
+                    avatar: issues.any((i) => inFilter(i, f) && isNew(i))
+                        ? const Icon(Icons.circle, size: 10, color: Colors.red)
+                        : null,
+                    selected: _filter == f,
+                    onSelected: (_) => setState(() => _filter = f),
+                  ),
+              ]),
+              const SizedBox(height: 12),
+              if (issues.isEmpty)
+                const EmptyState('No issues logged in your councils yet. Tap “Log issue” after a meeting.',
+                    icon: Icons.loop)
+              else if (list.isEmpty)
+                const EmptyState('Nothing here', icon: Icons.check_circle_outline),
+              for (final i in list)
+                FollowUpCard(
+                  issue: i,
+                  council: widget.data.council(i.councilId)?.name ?? '',
+                  raisedBy: i.raisedBy == Repo.uid ? 'You' : (_names[i.raisedBy] ?? ''),
+                  isNew: isNew(i),
+                  onTap: () async {
+                    if (await showIssueUpdateDialog(context, i, officer: false)) _reload();
+                  },
+                ),
+              const SizedBox(height: 72),
+            ]);
+          },
         ),
       );
 }

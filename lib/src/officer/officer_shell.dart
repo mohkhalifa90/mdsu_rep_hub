@@ -80,6 +80,7 @@ class _OfficerShellState extends State<OfficerShell> {
         'reports' => Badges.instance.of('reports'),
         'reps' => Badges.instance.of('signups'),
         'chat' => Badges.instance.of('channels'),
+        'followups' => Badges.instance.of('followups'),
         _ => 0,
       });
 

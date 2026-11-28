@@ -6,6 +6,7 @@ import '../data/models.dart';
 import '../data/repo.dart';
 import '../data/roster.dart';
 import '../shared/avatars.dart';
+import '../shared/badges.dart';
 import '../shared/format.dart';
 import '../shared/issue_dialogs.dart';
 import '../shared/send_message.dart';
@@ -27,7 +28,12 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
   late Future<(List<Issue>, Map<String, String>)> _f = _load();
   late String _filter = widget.openIssueId == null ? 'open' : 'all';
   bool _opened = false;
+  DateTime? _since; // when I opened Follow-ups before – newer changes by others are "new"
   Future<(List<Issue>, Map<String, String>)> _load() async {
+    if (_since == null) {
+      _since = await Repo.markSeen('followups').catchError((_) => DateTime.now());
+      Badges.instance.refresh(); // the number on the tab goes away
+    }
     final r = (await Repo.issues(), await Repo.memberNames());
     // opened from a notification: show that follow-up straight away
     if (!_opened && widget.openIssueId != null) {
@@ -53,6 +59,8 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
       builder: (context, data) {
         final (issues, names) = data;
         final list = issues.where((i) => _filter == 'all' || (_filter == 'open' ? i.isOpen : i.status == _filter));
+        bool isNew(Issue i) => _since != null && i.isNewFor(Repo.uid, _since!);
+        int newIn(bool Function(Issue) f) => issues.where((i) => f(i) && isNew(i)).length;
         return ListView(padding: EdgeInsets.all(isNarrow(context) ? 12 : 24), children: [
           PageIntro(
             text: 'Every issue raised in a council is tracked until the university answers. Open issues are '
@@ -77,6 +85,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.orange.shade800,
                 label: 'Open follow-ups',
                 value: '${issues.where((i) => i.isOpen).length}',
+                newCount: newIn((i) => i.isOpen),
                 sub: 'waiting for an answer',
                 selected: _filter == 'open',
                 onTap: () => setState(() => _filter = 'open')),
@@ -85,6 +94,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.red.shade700,
                 label: 'Escalated',
                 value: '${issues.where((i) => i.status == 'escalated').length}',
+                newCount: newIn((i) => i.status == 'escalated'),
                 sub: 'no answer in ${s?.escalateAfter ?? 2}+ meetings',
                 selected: _filter == 'escalated',
                 onTap: () => setState(() => _filter = 'escalated')),
@@ -93,6 +103,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.green.shade700,
                 label: 'Answered',
                 value: '${issues.where((i) => i.status == 'answered').length}',
+                newCount: newIn((i) => i.status == 'answered'),
                 sub: 'ready to close',
                 selected: _filter == 'answered',
                 onTap: () => setState(() => _filter = 'answered')),
@@ -101,6 +112,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.blueGrey,
                 label: 'Closed',
                 value: '${issues.where((i) => i.status == 'closed').length}',
+                newCount: newIn((i) => i.status == 'closed'),
                 sub: 'finished',
                 selected: _filter == 'closed',
                 onTap: () => setState(() => _filter = 'closed')),
@@ -119,20 +131,14 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
           const SizedBox(height: 12),
           if (list.isEmpty) const EmptyState('Nothing here'),
           for (final i in list)
-            Card(
-              child: ListTile(
-                title: Text(i.title),
-                subtitle: Text(
-                  '${widget.data.council(i.councilId)?.name ?? ''} · responsible: ${i.responsible ?? '—'} · '
-                  'raised by ${names[i.raisedBy] ?? ''} on ${fmtDate(i.createdAt)}'
-                  '${(i.response ?? '').isEmpty ? '' : '\n↳ ${i.response}'}',
-                ),
-                isThreeLine: (i.response ?? '').isNotEmpty,
-                trailing: StatusChip.issue(i.status),
-                onTap: () async {
-                  if (await showIssueUpdateDialog(context, i, officer: true)) _reload();
-                },
-              ),
+            FollowUpCard(
+              issue: i,
+              council: widget.data.council(i.councilId)?.name ?? '',
+              raisedBy: names[i.raisedBy] ?? '',
+              isNew: isNew(i),
+              onTap: () async {
+                if (await showIssueUpdateDialog(context, i, officer: true)) _reload();
+              },
             ),
         ]);
       },

@@ -241,8 +241,10 @@ class Kpi extends StatefulWidget {
   final Color? color;
   final VoidCallback? onTap;
   final bool selected; // used as a filter right now
+  final int newCount; // things in this number you have not seen yet
   const Kpi(
       {super.key,
+      this.newCount = 0,
       required this.label,
       required this.value,
       this.sub,
@@ -296,6 +298,8 @@ class _KpiState extends State<Kpi> {
           width: isNarrow(context) ? 155 : 200,
           child: Card(
             elevation: _hover ? 4 : 0,
+            // something new in here: tinted card
+            color: widget.newCount > 0 ? Color.alphaBlend(color.withValues(alpha: 0.10), t.cardColor) : null,
             shape: widget.selected
                 ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: color, width: 2))
                 : null,
@@ -319,6 +323,13 @@ class _KpiState extends State<Kpi> {
                       child: Text(widget.label,
                           maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.bodySmall),
                     ),
+                    if (widget.newCount > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+                        child: Text('${widget.newCount} new',
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
                   ]),
                   const SizedBox(height: 8),
                   _value(t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),

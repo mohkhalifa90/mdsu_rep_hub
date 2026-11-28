@@ -388,3 +388,90 @@ Widget _historyLine(BuildContext context, Map<String, dynamic> e, Map<String, St
     ]),
   );
 }
+
+
+Color issueColor(String status) => switch (status) {
+      'awaiting' => Colors.orange.shade800,
+      'answered' => Colors.green.shade700,
+      'escalated' => Colors.red.shade700,
+      _ => Colors.blueGrey,
+    };
+
+/// One follow-up in a list: coloured bar for its status, "New" when someone else changed it
+/// since you last looked, the council, who raised it, and the latest answer.
+class FollowUpCard extends StatelessWidget {
+  final Issue issue;
+  final String council;
+  final String raisedBy;
+  final bool isNew;
+  final VoidCallback onTap;
+  const FollowUpCard(
+      {super.key,
+      required this.issue,
+      required this.council,
+      required this.raisedBy,
+      required this.isNew,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final c = issueColor(issue.status);
+    final i = issue;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      color: isNew ? Color.alphaBlend(c.withValues(alpha: 0.07), t.cardColor) : null,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(border: Border(left: BorderSide(color: c, width: 4))),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (isNew)
+                Container(
+                  margin: const EdgeInsets.only(right: 8, top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(8)),
+                  child: const Text('NEW',
+                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+              Expanded(
+                child: Text(i.title,
+                    style: t.textTheme.titleMedium?.copyWith(fontWeight: isNew ? FontWeight.w700 : null),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 8),
+              StatusChip.issue(i.status),
+            ]),
+            const SizedBox(height: 6),
+            Wrap(spacing: 12, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              _meta(context, Icons.groups_outlined, council),
+              _meta(context, Icons.person_outline, '$raisedBy \u00b7 ${fmtDate(i.createdAt)}'),
+              if ((i.responsible ?? '').isNotEmpty) _meta(context, Icons.school_outlined, i.responsible!),
+            ]),
+            if ((i.response ?? '').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                    color: t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text('\u21b3 ${i.response}  \u00b7 ${fmtDate(i.updatedAt)}',
+                    maxLines: 2, overflow: TextOverflow.ellipsis, style: t.textTheme.bodySmall),
+              ),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _meta(BuildContext context, IconData icon, String text) => Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Text(text, style: Theme.of(context).textTheme.bodySmall),
+      ]);
+}

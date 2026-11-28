@@ -702,6 +702,19 @@ select from pg_temp.as_user('Head of Education');
 select public.set_issue_status('00000000-0000-0000-0000-00000000c105', 'awaiting', null);
 insert into t select '30b officer reopens', (select status = 'awaiting' from public.issues where id = '00000000-0000-0000-0000-00000000c105');
 
+-- 31. Follow-up notifications reach the Head of Education; "new since last look"
+select from pg_temp.as_user('Head of Education');
+select public.mark_seen('followups');
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.issues (id, council_id, title)
+select '00000000-0000-0000-0000-0000000a1e47', id, 'Alert test' from public.councils where type = 'siec' limit 1;
+select from pg_temp.as_user('Head of Education');
+insert into t select '31 officer notified of a new follow-up',
+  exists (select 1 from public.notifications where user_id = auth.uid() and link = 'followups/00000000-0000-0000-0000-0000000a1e47');
+insert into t select '31b new follow-up counted for the officer', (public.my_badges()->>'followups')::int >= 1;
+select public.mark_seen('followups');
+insert into t select '31c opening the page clears it', (public.my_badges()->>'followups')::int = 0;
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

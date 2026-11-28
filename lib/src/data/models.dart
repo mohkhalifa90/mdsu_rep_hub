@@ -361,6 +361,8 @@ class Issue {
   final String? response;
   final DateTime createdAt;
   final DateTime? editedAt;
+  final DateTime updatedAt;
+  final String? lastActor; // who changed it last
   Issue.fromMap(Map<String, dynamic> m)
       : id = m['id'] as String,
         councilId = m['council_id'] as String,
@@ -372,8 +374,15 @@ class Issue {
         status = m['status'] as String,
         response = m['response'] as String?,
         createdAt = _dt(m['created_at']),
-        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']);
+        editedAt = m['edited_at'] == null ? null : _dt(m['edited_at']),
+        updatedAt = _dt(m['updated_at'] ?? m['created_at']),
+        lastActor = m['last_actor'] as String?;
   bool get isOpen => status == 'awaiting' || status == 'escalated';
+
+  /// created or changed by someone else after [since]
+  bool isNewFor(String me, DateTime since) =>
+      (updatedAt.isAfter(since) && lastActor != null && lastActor != me) ||
+      (createdAt.isAfter(since) && raisedBy != me);
 }
 
 /// Row from rpc open_issues_for_meeting

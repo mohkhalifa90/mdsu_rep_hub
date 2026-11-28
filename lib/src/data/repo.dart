@@ -493,6 +493,12 @@ class Repo {
       sb.rpc('set_issue_status', params: {'p_issue': id, 'p_status': status, 'p_response': response});
 
   /// Head of Education always; the person who raised it until someone else posts an update
+  /// I opened a page now; returns when I opened it before (to show what is new)
+  static Future<DateTime> markSeen(String key) async {
+    final r = await sb.rpc('mark_seen', params: {'p_key': key});
+    return r == null ? DateTime.now().subtract(const Duration(days: 7)) : DateTime.parse(r as String).toLocal();
+  }
+
   static Future<bool> canChangeIssue(String id) async =>
       (await sb.rpc('can_change_issue', params: {'p_issue': id})) == true;
 
