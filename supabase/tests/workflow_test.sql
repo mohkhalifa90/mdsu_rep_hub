@@ -687,6 +687,21 @@ select from pg_temp.as_user('Head of Education');
 select public.delete_issue('00000000-0000-0000-0000-00000000155e');
 insert into t select '29c officer deletes', not exists (select 1 from public.issues where id = '00000000-0000-0000-0000-00000000155e');
 
+-- 30. Reps cannot reopen a closed follow-up
+select from pg_temp.as_user('Ahmed Saleh');
+insert into public.issues (id, council_id, title)
+select '00000000-0000-0000-0000-00000000c105', id, 'Closed test' from public.councils where type = 'siec' limit 1;
+select from pg_temp.as_user('Head of Education');
+select public.set_issue_status('00000000-0000-0000-0000-00000000c105', 'closed', 'Done');
+select from pg_temp.as_user('Ahmed Saleh');
+do $$ begin
+  perform public.set_issue_status('00000000-0000-0000-0000-00000000c105', 'answered', 'reopen');
+  insert into t values ('30 rep cannot reopen a closed follow-up', false);
+exception when others then insert into t values ('30 rep cannot reopen a closed follow-up', true); end $$;
+select from pg_temp.as_user('Head of Education');
+select public.set_issue_status('00000000-0000-0000-0000-00000000c105', 'awaiting', null);
+insert into t select '30b officer reopens', (select status = 'awaiting' from public.issues where id = '00000000-0000-0000-0000-00000000c105');
+
 reset role;
 \echo
 select case when passed is true then 'PASS' else 'FAIL' end as result, name from t order by name;

@@ -128,6 +128,8 @@ Future<bool> _issueDialog(BuildContext context, Issue issue, {required bool offi
   final allowed = officer ? issueStatusLabels.keys.toList() : ['awaiting', 'answered'];
   if (!allowed.contains(status)) allowed.add(status);
   final t = Theme.of(context);
+  // closed = finished: for reps it can only be read; the Head of Education can open it again
+  final readOnly = !officer && issue.status == 'closed';
   // the dialog closes with: true = post update, 'edit' / 'delete' = change the issue itself
   final ok = await showDialog<Object>(
     context: context,
@@ -188,6 +190,21 @@ Future<bool> _issueDialog(BuildContext context, Issue issue, {required bool offi
                     ),
                   ),
                 const Divider(height: 24),
+                if (readOnly)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: Colors.blueGrey.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
+                    child: const Row(children: [
+                      Icon(Icons.lock_outline, size: 18, color: Colors.blueGrey),
+                      SizedBox(width: 8),
+                      Expanded(
+                          child: Text('This follow-up is closed. If it needs more work, ask the Head of Education '
+                              'to open it again.')),
+                    ]),
+                  )
+                else ...[
                 // ---- add an update ----
                 Text('Add an update', style: t.textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -223,15 +240,17 @@ Future<bool> _issueDialog(BuildContext context, Issue issue, {required bool offi
                     child: Text('Only the Head of Education can escalate or close a follow-up.',
                         style: t.textTheme.bodySmall),
                   ),
+                ],
               ]),
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Close')),
-            FilledButton(
-              onPressed: changed ? () => Navigator.pop(ctx, true) : null,
-              child: const Text('Post update'),
-            ),
+            if (!readOnly)
+              FilledButton(
+                onPressed: changed ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('Post update'),
+              ),
           ],
         );
       },
