@@ -322,7 +322,8 @@ class _KpiState extends State<Kpi> {
                   ]),
                   const SizedBox(height: 8),
                   _value(t.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  if (widget.sub != null) Text(widget.sub!, style: t.textTheme.bodySmall),
+                  // always one line (empty when there is no note), so every card has the same height
+                  Text(widget.sub ?? ' ', maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.bodySmall),
                 ]),
               ),
             ),

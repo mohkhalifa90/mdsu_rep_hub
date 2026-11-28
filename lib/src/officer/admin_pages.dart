@@ -77,6 +77,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.orange.shade800,
                 label: 'Open follow-ups',
                 value: '${issues.where((i) => i.isOpen).length}',
+                sub: 'waiting for an answer',
                 selected: _filter == 'open',
                 onTap: () => setState(() => _filter = 'open')),
             Kpi(
@@ -84,7 +85,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.red.shade700,
                 label: 'Escalated',
                 value: '${issues.where((i) => i.status == 'escalated').length}',
-                sub: 'no answer for several meetings',
+                sub: 'no answer in ${s?.escalateAfter ?? 2}+ meetings',
                 selected: _filter == 'escalated',
                 onTap: () => setState(() => _filter = 'escalated')),
             Kpi(
@@ -92,6 +93,7 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 color: Colors.green.shade700,
                 label: 'Answered',
                 value: '${issues.where((i) => i.status == 'answered').length}',
+                sub: 'ready to close',
                 selected: _filter == 'answered',
                 onTap: () => setState(() => _filter = 'answered')),
             Kpi(
