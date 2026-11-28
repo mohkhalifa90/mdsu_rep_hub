@@ -22,8 +22,7 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
   String council = councils.first.id;
   String? meeting;
   final title = TextEditingController(), details = TextEditingController(), resp = TextEditingController();
-  // the dialog closes with: true = post update, 'edit' / 'delete' = change the issue itself
-  final ok = await showDialog<Object>(
+  final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
       final past = meetings.where((m) => m.isPast && m.councilId == council).toList().reversed.toList();
@@ -101,17 +100,36 @@ Future<bool> showAddIssueDialog(BuildContext context, {required List<Council> co
 /// Record the university's answer or change status. Reps may only set "answered".
 /// A follow-up as a thread: the issue as it was written (never changed), every update under it
 /// (who, status, note), and a box at the bottom to add a new update.
+bool _issueDialogBusy = false; // a second tap while it loads must not open a second dialog
+
 Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required bool officer}) async {
-  final events = (await Repo.issueEvents(issue.id)).reversed.toList(); // oldest first, like a conversation
-  final names = await Repo.memberNames();
-  final canChange = await Repo.canChangeIssue(issue.id).catchError((_) => false);
+  if (_issueDialogBusy) return false;
+  _issueDialogBusy = true;
+  try {
+    return await _issueDialog(context, issue, officer: officer);
+  } finally {
+    _issueDialogBusy = false;
+  }
+}
+
+Future<bool> _issueDialog(BuildContext context, Issue issue, {required bool officer}) async {
+  // load everything at once
+  final loaded = await Future.wait<Object>([
+    Repo.issueEvents(issue.id),
+    Repo.memberNames(),
+    Repo.canChangeIssue(issue.id).catchError((_) => false),
+  ]);
+  final events = (loaded[0] as List<Map<String, dynamic>>).reversed.toList(); // oldest first, like a conversation
+  final names = loaded[1] as Map<String, String>;
+  final canChange = loaded[2] as bool;
   if (!context.mounted) return false;
   String status = issue.status;
   final note = TextEditingController();
   final allowed = officer ? issueStatusLabels.keys.toList() : ['awaiting', 'answered'];
   if (!allowed.contains(status)) allowed.add(status);
   final t = Theme.of(context);
-  final ok = await showDialog<bool>(
+  // the dialog closes with: true = post update, 'edit' / 'delete' = change the issue itself
+  final ok = await showDialog<Object>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setD) {
@@ -156,9 +174,19 @@ Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required 
                 Text('Updates', style: t.textTheme.titleSmall),
                 const SizedBox(height: 4),
                 if (events.where((e) => e['event'] != 'Issue logged').isEmpty)
-                  Text('No updates yet', style: t.textTheme.bodySmall),
-                for (final e in events)
-                  if (e['event'] != 'Issue logged') _historyLine(ctx, e, names),
+                  Text('No updates yet', style: t.textTheme.bodySmall)
+                else
+                  // long histories scroll here, so the update box below stays in view
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: SingleChildScrollView(
+                      reverse: true, // start at the newest
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        for (final e in events)
+                          if (e['event'] != 'Issue logged') _historyLine(ctx, e, names),
+                      ]),
+                    ),
+                  ),
                 const Divider(height: 24),
                 // ---- add an update ----
                 Text('Add an update', style: t.textTheme.titleSmall),
@@ -173,14 +201,22 @@ Future<bool> showIssueUpdateDialog(BuildContext context, Issue issue, {required 
                   ),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Status'),
-                  items: [
-                    for (final s in allowed) DropdownMenuItem(value: s, child: Text(issueStatusLabels[s] ?? s)),
-                  ],
-                  onChanged: (v) => setD(() => status = v ?? status),
-                ),
+                Text('Status', style: t.textTheme.labelMedium),
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final s in allowed)
+                    ChoiceChip(
+                      label: Text(issueStatusLabels[s] ?? s),
+                      selected: status == s,
+                      onSelected: (_) => setD(() => status = s),
+                    ),
+                ]),
+                if (officer && issue.status == 'closed')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('Closed by mistake? Pick another status to open it again.',
+                        style: t.textTheme.bodySmall),
+                  ),
                 if (!officer)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),

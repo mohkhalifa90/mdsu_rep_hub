@@ -94,6 +94,14 @@ class _OfficerFollowUpsPageState extends State<OfficerFollowUpsPage> {
                 value: '${issues.where((i) => i.status == 'answered').length}',
                 selected: _filter == 'answered',
                 onTap: () => setState(() => _filter = 'answered')),
+            Kpi(
+                icon: Icons.task_alt,
+                color: Colors.blueGrey,
+                label: 'Closed',
+                value: '${issues.where((i) => i.status == 'closed').length}',
+                sub: 'finished',
+                selected: _filter == 'closed',
+                onTap: () => setState(() => _filter = 'closed')),
           ]),
           const SizedBox(height: 12),
           Wrap(spacing: 8, children: [
